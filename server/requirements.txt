@@ -1,0 +1,7 @@
+google-generativeai
+pydantic
+pytest
+loguru
+pydantic-settings
+fastapi
+uvicorn
