@@ -5,3 +5,8 @@ loguru
 pydantic-settings
 fastapi
 uvicorn
+sqlmodel
+asyncmy
+jwt
+passlib
+python-jose
