@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     host: str
     port: int
 
+    # ---- Secrect Token ----
+    jwt_secret_key: str
+    jwt_algorithm: str
+
     # ---- Database configure ----
     mysql_host: str
     mysql_port: int
@@ -34,6 +38,16 @@ class Settings(BaseSettings):
 
     # ---- Gemini setting ----
     gemini_api_key: str
+
+    # ---- Help Database configure ----
+    @property
+    def mysql_url(self) -> str:
+        return (
+            "mysql+pymysql://"
+            f"{self.mysql_user}:{self.mysql_password}@"
+            f"{self.mysql_host}:{self.mysql_port}/"
+            f"{self.mysql_database}"
+        )
     
 
 
