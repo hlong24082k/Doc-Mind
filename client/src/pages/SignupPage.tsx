@@ -8,27 +8,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 
-const LoginPage: React.FC = () => {
+const SignupPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleSignup = (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login logic
-    if (email === "admin@google.com" && password === "password") {
-      // Simulate successful login
-      localStorage.setItem("isLoggedIn", "true"); // Store login status
+
+    if (password !== confirmPassword) {
       toast({
-        title: "Login Successful",
-        description: "Redirecting to chat...",
+        title: "Sign Up Failed",
+        description: "Passwords do not match.",
+        variant: "destructive",
       });
-      navigate("/chat");
+      return;
+    }
+
+    // Mock sign-up logic
+    if (email && password) {
+      // Simulate successful registration
+      toast({
+        title: "Sign Up Successful",
+        description: "You can now log in with your new account.",
+      });
+      navigate("/login");
     } else {
       toast({
-        title: "Login Failed",
-        description: "Invalid email or password.",
+        title: "Sign Up Failed",
+        description: "Please fill in all fields.",
         variant: "destructive",
       });
     }
@@ -38,13 +48,13 @@ const LoginPage: React.FC = () => {
     <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900">
       <Card className="mx-auto max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardTitle className="text-2xl">Sign Up</CardTitle>
           <CardDescription>
-            Enter your email below to login to your account
+            Enter your information to create an account
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleSignup}>
             <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
@@ -58,12 +68,7 @@ const LoginPage: React.FC = () => {
                 />
               </div>
               <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <Link to="#" className="ml-auto inline-block text-sm underline">
-                    Forgot your password?
-                  </Link>
-                </div>
+                <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
                   type="password"
@@ -72,18 +77,28 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
               <Button type="submit" className="w-full">
-                Login
+                Create an account
               </Button>
               <Button variant="outline" className="w-full">
-                Login with Google
+                Sign up with Google
               </Button>
             </div>
           </form>
           <div className="mt-4 text-center text-sm">
-            Don&apos;t have an account?{" "}
-            <Link to="/signup" className="underline"> {/* Link to signup page */}
-              Sign up
+            Already have an account?{" "}
+            <Link to="/login" className="underline">
+              Login
             </Link>
           </div>
         </CardContent>
@@ -92,4 +107,4 @@ const LoginPage: React.FC = () => {
   );
 };
 
-export default LoginPage;
+export default SignupPage;
