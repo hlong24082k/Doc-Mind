@@ -5,8 +5,8 @@ loguru
 pydantic-settings
 fastapi
 uvicorn
-sqlmodel
-asyncmy
+motor
 jwt
 passlib
 python-jose
+argon2_cffi

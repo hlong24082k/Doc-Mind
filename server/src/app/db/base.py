@@ -25,5 +25,6 @@ metadata = MetaData(
 # Declarative
 # =========================================================
 
-Base = declarative_base(metadata=metadata)
+# Base = declarative_base(metadata=metadata)
+Base = declarative_base()
 logger.info("SQLAlchemy Declarative Base initialized with utf8mb4 metadata.")

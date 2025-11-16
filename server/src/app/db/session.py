@@ -1,33 +1,37 @@
-from typing import Generator
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+import asyncio
+from loguru import logger
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.app.config import settings
 
-# Create async engine
-engine = create_engine(
-    settings.mysql_url,
-)
 
-# Create async session factory
-SessionLocal = sessionmaker(
-    engine,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
 
-# =========================================================
-# Dependency for FastAPI
-# =========================================================
-def get_db() -> Generator[Session, None, None]:
-    db: Session = SessionLocal()
+db_client: AsyncIOMotorClient = None
+db_uri: str = settings.db_uri
+
+
+async def get_db() -> AsyncIOMotorClient:
+    db_name = settings.mongo_db
+    return db_client[db_name]
+
+
+async def connect_and_init_db():
+    global db_client
     try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
+        db_client = AsyncIOMotorClient(
+            db_uri,
+        )
+        logger.info(f'Connected to mongo: {db_uri}')
+    except Exception as e:
+        logger.debug(f'Could not connect to mongo: {e}')
         raise
-    finally:
-        db.close()
+
+
+async def close_db_connect():
+    global db_client
+    if db_client is None:
+        logger.debug('Connection is None, nothing to close.')
+        return
+    db_client.close()
+    db_client = None
+    logger.info('Mongo connection closed.')

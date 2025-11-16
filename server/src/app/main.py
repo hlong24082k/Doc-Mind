@@ -1,22 +1,23 @@
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
+from loguru import logger
 
+from src.app.db.session import connect_and_init_db, close_db_connect
 from src.app.routers import api_router
 from src.app.config import settings
 
 
-def custom_generate_unique_id(route: APIRoute) -> str:
-    return f"{route.tags[0]}-{route.name}"
-
 
 app = FastAPI(
-    generate_unique_id_function=custom_generate_unique_id,
     title=settings.name,
     version=settings.version,
     description=settings.description,
-    debug=settings.debug,
+    redoc_url=None
 )
+
+app.add_event_handler("startup", connect_and_init_db)
+app.add_event_handler("shutdown", close_db_connect)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,4 +27,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/v1/api")
+app.include_router(api_router, prefix="/api")
