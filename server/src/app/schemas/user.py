@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -23,3 +23,11 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+# ------------------
+# Login schema
+# ------------------
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
