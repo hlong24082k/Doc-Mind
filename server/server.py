@@ -9,6 +9,5 @@ if __name__ == "__main__":
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
-        workers=1,                # increase for production (e.g., 4)
         log_level="info" 
     )

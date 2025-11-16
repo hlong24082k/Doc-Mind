@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: docmind_mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: user
+      MONGO_INITDB_ROOT_PASSWORD: passord
+      MONGO_INITDB_DATABASE: docmind
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:

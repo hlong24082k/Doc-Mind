@@ -30,25 +30,21 @@ class Settings(BaseSettings):
     jwt_algorithm: str
 
     # ---- Database configure ----
-    mysql_host: str
-    mysql_port: int
-    mysql_user: str
-    mysql_password: str
-    mysql_database: str
+    mongo_host: str
+    mongo_port: int
+    mongo_user: str
+    mongo_password: str
+    max_connections_count: int
+    min_connections_count: int
+    mongo_db: str
 
     # ---- Gemini setting ----
     gemini_api_key: str
 
-    # ---- Help Database configure ----
+    # Helper database configure ----
     @property
-    def mysql_url(self) -> str:
-        return (
-            "mysql+pymysql://"
-            f"{self.mysql_user}:{self.mysql_password}@"
-            f"{self.mysql_host}:{self.mysql_port}/"
-            f"{self.mysql_database}"
-        )
-    
+    def db_uri(self) -> str:
+        return f"mongodb://{self.mongo_user}:{self.mongo_password}@{self.mongo_host}:{self.mongo_port}/{self.mongo_db}?authSource=admin"
 
 
 settings = Settings()  # type: ignore

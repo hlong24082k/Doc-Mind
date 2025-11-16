@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from jose import JWTError, jwt
 
 from src.app.db.session import get_db
@@ -14,8 +14,8 @@ from src.app.cruds import user as crud_user
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
-def get_current_user(
-    db: Session = Depends(get_db),
+async def get_current_user(
+    db: AsyncIOMotorDatabase = Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ) -> model_user.User:
     credentials_exception = HTTPException(
@@ -34,7 +34,7 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = crud_user.get_user_by_username(db=db, username=username)
+    user = await crud_user.get_user_by_username(db=db, username=username)
     if user is None:
         raise credentials_exception
         
