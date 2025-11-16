@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
+from loguru import logger
 
 from src.app.security.security import get_password_hash
 from src.app.models import (
@@ -18,6 +19,7 @@ from src.app.schemas import (
 async def get_user_by_username(db: AsyncIOMotorDatabase, username: str) -> model_user.User | None:
     """Get user by username from MongoDB."""
     user_doc = await db["user"].find_one({"username": username})
+    logger.debug("[debug] user_doc: ", user_doc)
     if user_doc:
         # Convert MongoDB document to User model
         # Handle _id field

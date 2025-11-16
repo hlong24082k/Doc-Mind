@@ -1,4 +1,3 @@
-import asyncio
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -21,7 +20,7 @@ async def connect_and_init_db():
         db_client = AsyncIOMotorClient(
             db_uri,
         )
-        logger.info(f'Connected to mongo: {db_uri}')
+        logger.info(f'Connected to mongo')
     except Exception as e:
         logger.debug(f'Could not connect to mongo: {e}')
         raise

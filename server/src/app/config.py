@@ -1,10 +1,9 @@
 import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from loguru import logger
+
 
 ENV_PATH = os.path.join(os.getcwd(), ".env")
-logger.debug(f"ENV_PATH: {ENV_PATH}")
 
 
 class Settings(BaseSettings):
@@ -28,6 +27,7 @@ class Settings(BaseSettings):
     # ---- Secrect Token ----
     jwt_secret_key: str
     jwt_algorithm: str
+    jwt_access_token_expire_minutes: int
 
     # ---- Database configure ----
     mongo_host: str
