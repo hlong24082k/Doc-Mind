@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 
+import { authService } from "@/api/services/auth.service";
+
 const SignupPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,7 +17,7 @@ const SignupPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (password !== confirmPassword) {
@@ -27,18 +29,31 @@ const SignupPage: React.FC = () => {
       return;
     }
 
-    // Mock sign-up logic
-    if (email && password) {
-      // Simulate successful registration
+    if (!email || !password) {
+      toast({
+        title: "Sign Up Failed",
+        description: "Please fill in all fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await authService.register({
+        username: email,
+        password: password,
+      });
+
       toast({
         title: "Sign Up Successful",
         description: "You can now log in with your new account.",
       });
+
       navigate("/login");
-    } else {
+    } catch (error) {
       toast({
         title: "Sign Up Failed",
-        description: "Please fill in all fields.",
+        description: "An error occurred during sign up.",
         variant: "destructive",
       });
     }
@@ -53,9 +68,11 @@ const SignupPage: React.FC = () => {
             Enter your information to create an account
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleSignup}>
             <div className="grid gap-4">
+              
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -67,6 +84,7 @@ const SignupPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -77,6 +95,7 @@ const SignupPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="confirm-password">Confirm Password</Label>
                 <Input
@@ -87,14 +106,17 @@ const SignupPage: React.FC = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
               </div>
+
               <Button type="submit" className="w-full">
                 Create an account
               </Button>
+
               <Button variant="outline" className="w-full">
                 Sign up with Google
               </Button>
             </div>
           </form>
+
           <div className="mt-4 text-center text-sm">
             Already have an account?{" "}
             <Link to="/login" className="underline">
