@@ -2,15 +2,12 @@
 
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { MadeWithDyad } from "@/components/made-with-dyad";
 
 const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // For now, redirect to the login page.
-    // In a real app, you'd check authentication status here.
-    navigate("/login");
+    // navigate("/login");
   }, [navigate]);
 
   return (
@@ -21,7 +18,6 @@ const Index = () => {
           Redirecting to login page.
         </p>
       </div>
-      <MadeWithDyad />
     </div>
   );
 };

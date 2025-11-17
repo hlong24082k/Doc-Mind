@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
+import { authService } from "@/api/services/auth.service";
+
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -14,18 +16,16 @@ const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     // Mock login logic
-    if (email === "admin@google.com" && password === "password") {
-      // Simulate successful login
-      localStorage.setItem("isLoggedIn", "true"); // Store login status
-      toast({
-        title: "Login Successful",
-        description: "Redirecting to chat...",
+    try {
+      await authService.login({
+        username: email,
+        password: password,
       });
       navigate("/chat");
-    } else {
+    } catch (error) {
       toast({
         title: "Login Failed",
         description: "Invalid email or password.",
