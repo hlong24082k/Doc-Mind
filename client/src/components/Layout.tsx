@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu, MessageSquare, FileText, LogOut } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuthStore } from "@/store/authStore";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,10 +16,10 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+  const { isAuthenticated, logout } = useAuthStore();
 
   const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
+    logout();
     toast({
       title: "Logged Out",
       description: "You have been successfully logged out.",
@@ -55,7 +56,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </Link>
             </nav>
           </div>
-          {isLoggedIn && (
+          {isAuthenticated && (
             <div className="mt-auto p-4">
               <Separator className="my-4" />
               <Button variant="ghost" className="w-full justify-start" onClick={handleLogout}>
@@ -105,7 +106,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   Documents
                 </Link>
               </nav>
-              {isLoggedIn && (
+              {isAuthenticated && (
                 <div className="mt-auto">
                   <Separator className="my-4" />
                   <Button variant="ghost" className="w-full justify-start" onClick={handleLogout}>

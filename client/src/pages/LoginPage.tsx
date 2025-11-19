@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { authService } from "@/api/services/auth.service";
+import { useAuthStore } from "@/store/authStore";
 
 
 const LoginPage: React.FC = () => {
@@ -15,20 +15,25 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { login, status } = useAuthStore();
+  const isLoading = status === "loading";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login logic
     try {
-      await authService.login({
+      await login({
         username: email,
         password: password,
+      });
+      toast({
+        title: "Login Successful",
+        description: "Welcome back!",
       });
       navigate("/chat");
     } catch (error) {
       toast({
         title: "Login Failed",
-        description: "Invalid email or password.",
+        description: error instanceof Error ? error.message : "Invalid email or password.",
         variant: "destructive",
       });
     }
@@ -72,8 +77,8 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              <Button type="submit" className="w-full">
-                Login
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Logging in..." : "Login"}
               </Button>
               <Button variant="outline" className="w-full">
                 Login with Google

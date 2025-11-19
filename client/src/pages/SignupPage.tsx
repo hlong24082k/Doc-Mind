@@ -7,8 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-
-import { authService } from "@/api/services/auth.service";
+import { useAuthStore } from "@/store/authStore";
 
 const SignupPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -16,6 +15,8 @@ const SignupPage: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { register: registerUser, status } = useAuthStore();
+  const isLoading = status === "loading";
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +40,7 @@ const SignupPage: React.FC = () => {
     }
 
     try {
-      await authService.register({
+      await registerUser({
         username: email,
         password: password,
       });
@@ -53,7 +54,7 @@ const SignupPage: React.FC = () => {
     } catch (error) {
       toast({
         title: "Sign Up Failed",
-        description: "An error occurred during sign up.",
+        description: error instanceof Error ? error.message : "An error occurred during sign up.",
         variant: "destructive",
       });
     }
@@ -107,8 +108,8 @@ const SignupPage: React.FC = () => {
                 />
               </div>
 
-              <Button type="submit" className="w-full">
-                Create an account
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Creating account..." : "Create an account"}
               </Button>
 
               <Button variant="outline" className="w-full">
