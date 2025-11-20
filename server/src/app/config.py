@@ -1,5 +1,6 @@
 import os
 
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +39,9 @@ class Settings(BaseSettings):
     min_connections_count: int
     mongo_db: str
 
+    # ---- Documents folfer ----
+    documents_folder: str
+
     # ---- Gemini setting ----
     gemini_api_key: str
 
@@ -46,5 +50,12 @@ class Settings(BaseSettings):
     def db_uri(self) -> str:
         return f"mongodb://{self.mongo_user}:{self.mongo_password}@{self.mongo_host}:{self.mongo_port}/{self.mongo_db}?authSource=admin"
 
+    # Helper Documents folfer ----
+    @property
+    def documents_folder_path(self) -> Path:
+        return Path(self.documents_folder)
+
+    def get_document_with_path(self, filename: str) -> Path:
+        return self.documents_folder_path / filename
 
 settings = Settings()  # type: ignore
