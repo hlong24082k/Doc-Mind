@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, FileText, MessageSquare } from "lucide-react";
@@ -8,9 +8,9 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/components/ui/use-toast";
 
 interface Document {
-  id: string;
+  _id: string;
   name: string;
-  uploadedDate: string;
+  created_at: string;
 }
 
 const DocumentsPage: React.FC = () => {
@@ -19,26 +19,108 @@ const DocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchDocuments = async () => {
+      try {
+        const response = await fetch("http://localhost:8080/api/document/documents");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch documents: ${response.status}`);
+        }
+
+        const data = await response.json();
+        let fetchedDocuments: Document[] = [];
+        if (Array.isArray(data)) {
+          fetchedDocuments = data;
+        } else if (Array.isArray(data?.documents)) {
+          fetchedDocuments = data.documents;
+        }
+
+        if (isMounted) {
+          setDocuments(fetchedDocuments);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        toast({
+          title: "Unable to load documents",
+          description: message,
+          variant: "destructive",
+        });
+      }
+    };
+
+    fetchDocuments();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [toast]);
+
   const handleFileUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && files.length > 0) {
-      const newFile = files[0];
-      const newDocument: Document = {
-        id: `doc-${Date.now()}`, // Simple unique ID
-        name: newFile.name,
-        uploadedDate: new Date().toLocaleDateString(),
-      };
-      setDocuments((prevDocs) => [...prevDocs, newDocument]);
-      toast({
-        title: "Document Uploaded",
-        description: `${newFile.name} has been added to your documents.`,
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const formData = new FormData();
+    Array.from(files).forEach((file) => {
+      formData.append("files", file);
+    });
+
+    try {
+      const response = await fetch("http://localhost:8080/api/document/uploadfile", {
+        method: "POST",
+        body: formData,
       });
-      // Clear the input so the same file can be uploaded again if needed
-      event.target.value = '';
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
+
+      let uploadedDocuments: Document[] = [];
+      try {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          uploadedDocuments = data;
+        } else if (Array.isArray(data?.documents)) {
+          uploadedDocuments = data.documents;
+        }
+      } catch (jsonError) {
+        // If the API doesn't return JSON, fall back to local document metadata.
+        uploadedDocuments = Array.from(files).map((file) => ({
+          _id: `doc-${Date.now()}-${file.name}`,
+          name: file.name,
+          created_at: new Date().toLocaleDateString(),
+        }));
+      }
+
+      if (uploadedDocuments.length === 0) {
+        uploadedDocuments = Array.from(files).map((file) => ({
+          _id: `doc-${Date.now()}-${file.name}`,
+          name: file.name,
+          created_at: new Date().toLocaleDateString(),
+        }));
+      }
+
+      setDocuments((prevDocs) => [...prevDocs, ...uploadedDocuments]);
+      toast({
+        title: "Upload Successful",
+        description: `${files.length} document${files.length > 1 ? "s" : ""} uploaded.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Upload Failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
     }
   };
 
@@ -51,7 +133,7 @@ const DocumentsPage: React.FC = () => {
       <h1 className="text-2xl font-bold mb-4">Your Documents</h1>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {documents.map((doc) => (
-          <Card key={doc.id}>
+          <Card key={doc._id}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 {doc.name}
@@ -61,13 +143,13 @@ const DocumentsPage: React.FC = () => {
             <CardContent>
               <div className="text-lg font-bold truncate">{doc.name}</div>
               <p className="text-xs text-muted-foreground">
-                Uploaded on {doc.uploadedDate}
+                Uploaded on {doc.created_at}
               </p>
               <Button
                 variant="outline"
                 size="sm"
                 className="mt-2"
-                onClick={() => handleStartChat(doc.id, doc.name)}
+                onClick={() => handleStartChat(doc._id, doc.name)}
               >
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Start Chat
@@ -89,6 +171,7 @@ const DocumentsPage: React.FC = () => {
             onChange={handleFileChange}
             className="hidden"
             accept=".pdf,.doc,.docx,.txt" // Specify accepted file types
+            multiple
           />
         </Card>
       </div>
