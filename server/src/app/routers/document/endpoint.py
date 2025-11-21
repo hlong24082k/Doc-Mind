@@ -1,15 +1,19 @@
 from fastapi import APIRouter, UploadFile, HTTPException, Depends
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from typing import List
 from pathlib import Path
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from src.app.dependencies import get_current_user
 from src.app.config import settings
 from src.app.db.session import get_db
 from src.app.cruds.document import (
     create_document as crud_create_document,
     get_documents as crud_get_documents,
+)
+from src.app.models import (
+    user as model_user
 )
 
 
@@ -18,7 +22,8 @@ document_router = APIRouter()
 
 @document_router.post("/uploadfile")
 async def create_upload_files(
-    files: List[UploadFile], db: AsyncIOMotorDatabase = Depends(get_db)
+    files: List[UploadFile], db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: model_user.User = Depends(get_current_user)
 ):
     # ensure documents folder exists
     documents_dir: Path = settings.documents_folder_path
@@ -40,19 +45,22 @@ async def create_upload_files(
         saved_files.append(name)
 
     if saved_files:
-        created = await crud_create_document(db, saved_files)
+        created = await crud_create_document(db, current_user, saved_files)
 
     return {"documents": [d.dict(by_alias=True) for d in created]}
 
 
-@document_router.get("/documents")
-async def list_documents(db: AsyncIOMotorDatabase = Depends(get_db)):
+@document_router.get("/")
+async def list_documents(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: model_user.User = Depends(get_current_user)
+):
     """Return all document records from the database."""
-    docs = await crud_get_documents(db)
+    docs = await crud_get_documents(db, current_user)
     return {"documents": [d.dict(by_alias=True) for d in docs]}
 
 
-@document_router.get("/documents/{filename}")
+@document_router.get("/{filename}")
 async def download_document(filename: str):
     """Download a specific document by filename."""
     file_path: Path = settings.get_document_with_path(filename)

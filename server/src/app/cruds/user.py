@@ -19,7 +19,6 @@ from src.app.schemas import (
 async def get_user_by_username(db: AsyncIOMotorDatabase, username: str) -> model_user.User | None:
     """Get user by username from MongoDB."""
     user_doc = await db["user"].find_one({"username": username})
-    logger.debug("[debug] user_doc: ", user_doc)
     if user_doc:
         # Convert MongoDB document to User model
         # Handle _id field

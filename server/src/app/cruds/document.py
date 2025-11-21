@@ -7,9 +7,14 @@ from loguru import logger
 
 from src.app.models import (
     document as model_document,
+    user as model_user,
 )
 
-async def create_document(db: AsyncIOMotorDatabase, files_in: List[str]) -> List[model_document.Document]:
+async def create_document(
+    db: AsyncIOMotorDatabase,
+    current_user: model_user.User,
+    files_in: List[str]
+) -> List[model_document.Document]:
     """Create document records in the database for the given filenames.
 
     Ensures uniqueness by document `name`. If a name already exists in the
@@ -28,16 +33,22 @@ async def create_document(db: AsyncIOMotorDatabase, files_in: List[str]) -> List
             skipped.append(name)
             continue
 
-        doc = {
-            "_id": str(uuid.uuid4()),
-            "name": name,
-            "created_at": datetime.utcnow(),
-        }
+        # doc = {
+        #     "_id": str(uuid.uuid4()),
+        #     "name": name,
+        #     "created_at": datetime.utcnow(),
+        # }
+        doc = model_document.Document(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            name=file_name,
+            created_at=datetime.utcnow()
+        )
 
         try:
-            await db["document"].insert_one(doc)
-            doc["id"] = doc["_id"]
-            created.append(model_document.Document(**doc))
+            # Insert as dict, not Pydantic model
+            await db["document"].insert_one(doc.dict(by_alias=True))
+            created.append(doc)
         except DuplicateKeyError:
             # In case a unique index exists on name and a race condition occurs
             skipped.append(name)
@@ -51,13 +62,14 @@ async def create_document(db: AsyncIOMotorDatabase, files_in: List[str]) -> List
     return created
 
 
-async def get_documents(db: AsyncIOMotorDatabase) -> List[model_document.Document]:
+async def get_documents(db: AsyncIOMotorDatabase, current_user: model_user.User) -> List[model_document.Document]:
     """Return all documents from the `document` collection as Pydantic models."""
     docs: List[model_document.Document] = []
-    cursor = db["document"].find()
+    cursor = db["document"].find({"user_id": current_user.id})
     async for d in cursor:
         # Normalize Mongo `_id` to `id` if necessary
         if "_id" in d and "id" not in d:
             d["id"] = str(d["_id"])
+            del d["_id"]
         docs.append(model_document.Document(**d))
     return docs
