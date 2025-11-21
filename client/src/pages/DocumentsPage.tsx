@@ -1,17 +1,16 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, FileText, MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "@/components/ui/use-toast";
 
-interface Document {
-  _id: string;
-  name: string;
-  created_at: string;
-}
+import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { Document } from "@/api/types/document";
+import { documentService } from "@/api/services/document.service";
+
 
 const DocumentsPage: React.FC = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -24,22 +23,13 @@ const DocumentsPage: React.FC = () => {
 
     const fetchDocuments = async () => {
       try {
-        const response = await fetch("http://localhost:8080/api/document/documents");
-        if (!response.ok) {
-          throw new Error(`Failed to fetch documents: ${response.status}`);
+        const response = await documentService.getDocuments();
+        if (!response) {
+          throw new Error(`Failed to fetch documents`);
         }
 
-        const data = await response.json();
-        let fetchedDocuments: Document[] = [];
-        if (Array.isArray(data)) {
-          fetchedDocuments = data;
-        } else if (Array.isArray(data?.documents)) {
-          fetchedDocuments = data.documents;
-        }
-
-        if (isMounted) {
-          setDocuments(fetchedDocuments);
-        }
+        const data = response.documents;
+        setDocuments(data);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
         toast({
@@ -73,40 +63,8 @@ const DocumentsPage: React.FC = () => {
     });
 
     try {
-      const response = await fetch("http://localhost:8080/api/document/uploadfile", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-      }
-
-      let uploadedDocuments: Document[] = [];
-      try {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          uploadedDocuments = data;
-        } else if (Array.isArray(data?.documents)) {
-          uploadedDocuments = data.documents;
-        }
-      } catch (jsonError) {
-        // If the API doesn't return JSON, fall back to local document metadata.
-        uploadedDocuments = Array.from(files).map((file) => ({
-          _id: `doc-${Date.now()}-${file.name}`,
-          name: file.name,
-          created_at: new Date().toLocaleDateString(),
-        }));
-      }
-
-      if (uploadedDocuments.length === 0) {
-        uploadedDocuments = Array.from(files).map((file) => ({
-          _id: `doc-${Date.now()}-${file.name}`,
-          name: file.name,
-          created_at: new Date().toLocaleDateString(),
-        }));
-      }
-
+      const response = await documentService.uploadFile(formData);
+      const uploadedDocuments = response.documents;
       setDocuments((prevDocs) => [...prevDocs, ...uploadedDocuments]);
       toast({
         title: "Upload Successful",
