@@ -46,7 +46,6 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
     user = await crud_user.get_user_by_username(db, username=form_data.username)
-    print("[debug] user: ", user)
     is_verified_password = verify_password(
         plain_password=form_data.password,
         hashed_password=user.hash_password

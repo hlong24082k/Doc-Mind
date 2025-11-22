@@ -33,11 +33,6 @@ async def create_document(
             skipped.append(name)
             continue
 
-        # doc = {
-        #     "_id": str(uuid.uuid4()),
-        #     "name": name,
-        #     "created_at": datetime.utcnow(),
-        # }
         doc = model_document.Document(
             id=str(uuid.uuid4()),
             user_id=current_user.id,
@@ -60,6 +55,16 @@ async def create_document(
         logger.warning("Some documents were skipped because they already exist: {}", skipped)
 
     return created
+
+
+async def delete_document(
+    db: AsyncIOMotorDatabase,
+    current_user: model_user.User,
+    document_id: str
+) -> bool:
+    """Delete a document from the database."""
+    result = await db["document"].delete_one({"_id": document_id, "user_id": current_user.id})
+    return result.deleted_count > 0
 
 
 async def get_documents(db: AsyncIOMotorDatabase, current_user: model_user.User) -> List[model_document.Document]:
