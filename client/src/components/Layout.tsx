@@ -4,22 +4,28 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, MessageSquare, FileText, LogOut } from "lucide-react";
+import { Menu, MessageSquare, FileText, LogOut, History, ChevronDown } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
-import { useAuthStore } from "@/store/authStore";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
+const mockChatHistory = [
+  { id: "1", title: "Conversation about React hooks" },
+  { id: "2", title: "Discussion on Tailwind CSS" },
+  { id: "3", title: "Project planning for Q&A app" },
+];
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isAuthenticated, logout } = useAuthStore();
+  const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
 
   const handleLogout = () => {
-    logout();
+    localStorage.removeItem("isLoggedIn");
     toast({
       title: "Logged Out",
       description: "You have been successfully logged out.",
@@ -41,22 +47,43 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex-1">
             <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
               <Link
-                to="/chat"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-              >
-                <MessageSquare className="h-4 w-4" />
-                New Chat
-              </Link>
-              <Link
                 to="/documents"
                 className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
               >
                 <FileText className="h-4 w-4" />
                 Documents
               </Link>
+              <Link
+                to="/chat"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+              >
+                <MessageSquare className="h-4 w-4" />
+                New Chat
+              </Link>
+              <Collapsible className="w-full">
+                <CollapsibleTrigger className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary w-full justify-between">
+                  <div className="flex items-center gap-3">
+                    <History className="h-4 w-4" />
+                    Chat History
+                  </div>
+                  <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="grid gap-1 pl-2 pr-2 py-1">
+                  {mockChatHistory.map((chat) => (
+                    <Link
+                      key={chat.id}
+                      to={`/chat/${chat.id}`}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                      {chat.title}
+                    </Link>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
             </nav>
           </div>
-          {isAuthenticated && (
+          {isLoggedIn && (
             <div className="mt-auto p-4">
               <Separator className="my-4" />
               <Button variant="ghost" className="w-full justify-start" onClick={handleLogout}>
@@ -92,21 +119,42 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <span className="sr-only">Q&A App</span>
                 </Link>
                 <Link
-                  to="/chat"
-                  className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
-                >
-                  <MessageSquare className="h-5 w-5" />
-                  New Chat
-                </Link>
-                <Link
                   to="/documents"
                   className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
                 >
                   <FileText className="h-5 w-5" />
                   Documents
                 </Link>
+                <Link
+                  to="/chat"
+                  className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
+                >
+                  <MessageSquare className="h-5 w-5" />
+                  New Chat
+                </Link>
+                <Collapsible className="w-full">
+                  <CollapsibleTrigger className="flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground w-full justify-between mx-[-0.65rem]">
+                    <div className="flex items-center gap-4">
+                      <History className="h-5 w-5" />
+                      Chat History
+                    </div>
+                    <ChevronDown className="h-5 w-5 transition-transform data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="grid gap-1 pl-8 pr-2 py-1">
+                    {mockChatHistory.map((chat) => (
+                      <Link
+                        key={chat.id}
+                        to={`/chat/${chat.id}`}
+                        className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        {chat.title}
+                      </Link>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
               </nav>
-              {isAuthenticated && (
+              {isLoggedIn && (
                 <div className="mt-auto">
                   <Separator className="my-4" />
                   <Button variant="ghost" className="w-full justify-start" onClick={handleLogout}>

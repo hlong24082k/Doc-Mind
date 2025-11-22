@@ -1,19 +1,32 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Upload, FileText, MessageSquare } from "lucide-react";
+import { FileText, Upload, Trash2, Search, MessageSquare } from "lucide-react"; // Added MessageSquare
 import { useNavigate } from "react-router-dom";
 
 import { useToast } from "@/components/ui/use-toast";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Document } from "@/api/types/document";
 import { documentService } from "@/api/services/document.service";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 
 const DocumentsPage: React.FC = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -46,10 +59,6 @@ const DocumentsPage: React.FC = () => {
       isMounted = false;
     };
   }, [toast]);
-
-  const handleFileUploadClick = () => {
-    fileInputRef.current?.click();
-  };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -86,52 +95,112 @@ const DocumentsPage: React.FC = () => {
     navigate(`/chat/${documentId}`, { state: { documentName } });
   };
 
-  return (
-    <div className="flex flex-col h-full p-4">
-      <h1 className="text-2xl font-bold mb-4">Your Documents</h1>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {documents.map((doc) => (
-          <Card key={doc._id}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {doc.name}
-              </CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-bold truncate">{doc.name}</div>
-              <p className="text-xs text-muted-foreground">
-                Uploaded on {doc.created_at}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => handleStartChat(doc._id, doc.name)}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Start Chat
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+  const handleDelete = async (documentId: string) => {
+    try {
+      const isSuccess = await documentService.deleteDocument(documentId);
+      if (!isSuccess) {
+        throw new Error(`Failed to delete document with id: ${documentId}`);
+      }
+      setDocuments((prevDocs) => prevDocs.filter((doc) => doc._id !== documentId));
+      toast({
+        title: "Document Deleted",
+        description: "The document has been successfully deleted.",
+        variant: "destructive",
+      });
+    } catch (error) {
+      toast({
+        title: "Document Deletion Failed",
+        description: "An error occurred while deleting the document.",
+        variant: "destructive",
+      });
+    }
+  };
 
-        <Card
-          className="flex flex-col items-center justify-center p-6 border-2 border-dashed hover:border-primary transition-colors cursor-pointer"
-          onClick={handleFileUploadClick}
-        >
-          <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground">Upload New Document</p>
-          <Button variant="ghost" className="mt-2">Browse Files</Button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-            accept=".pdf,.doc,.docx,.txt" // Specify accepted file types
-            multiple
+  const filteredDocuments = documents.filter((doc) =>
+    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-2xl font-bold">Documents</h1>
+
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search documents..."
+            className="pl-9"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
-        </Card>
+        </div>
+        <label htmlFor="file-upload" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer">
+          <Upload className="mr-2 h-4 w-4" /> Upload Document
+          <Input id="file-upload" type="file" className="sr-only" onChange={handleFileChange} multiple />
+        </label>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Uploaded At</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredDocuments.length > 0 ? (
+              filteredDocuments.map((doc) => (
+                <TableRow key={doc._id}>
+                  <TableCell className="font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    {doc.name}
+                  </TableCell>
+                  <TableCell>{doc.created_at}</TableCell>
+                  <TableCell className="text-right flex gap-2 justify-end"> {/* Added flex and gap for buttons */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleStartChat(doc._id, doc.name)}
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Chat
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the document
+                            <span className="font-bold"> "{doc.name}"</span>.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(doc._id)}>Continue</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                  No documents found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
