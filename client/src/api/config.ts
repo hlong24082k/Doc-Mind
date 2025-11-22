@@ -9,3 +9,4 @@ export const apiRegister = `${BASE_URL}/auth/register`
 export const apiGetDocuments = `${BASE_URL}/document`;
 export const apiUploadFile = `${BASE_URL}/document/uploadfile`;
 export const apiGetDocument = (documentId: string) => `${BASE_URL}/document/${documentId}`;
+export const apiDeleteDocument = (documentId: string) => `${BASE_URL}/document/${documentId}`;

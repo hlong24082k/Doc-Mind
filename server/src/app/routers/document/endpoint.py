@@ -8,9 +8,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from src.app.dependencies import get_current_user
 from src.app.config import settings
 from src.app.db.session import get_db
-from src.app.cruds.document import (
-    create_document as crud_create_document,
-    get_documents as crud_get_documents,
+from src.app.cruds import (
+    document as crud_document,
 )
 from src.app.models import (
     user as model_user
@@ -22,7 +21,8 @@ document_router = APIRouter()
 
 @document_router.post("/uploadfile")
 async def create_upload_files(
-    files: List[UploadFile], db: AsyncIOMotorDatabase = Depends(get_db),
+    files: List[UploadFile], 
+    db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: model_user.User = Depends(get_current_user)
 ):
     # ensure documents folder exists
@@ -45,7 +45,7 @@ async def create_upload_files(
         saved_files.append(name)
 
     if saved_files:
-        created = await crud_create_document(db, current_user, saved_files)
+        created = await crud_document.create_document(db, current_user, saved_files)
 
     return {"documents": [d.dict(by_alias=True) for d in created]}
 
@@ -56,7 +56,7 @@ async def list_documents(
     current_user: model_user.User = Depends(get_current_user)
 ):
     """Return all document records from the database."""
-    docs = await crud_get_documents(db, current_user)
+    docs = await crud_document.get_documents(db, current_user)
     return {"documents": [d.dict(by_alias=True) for d in docs]}
 
 
@@ -67,3 +67,13 @@ async def download_document(filename: str):
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path=str(file_path), filename=filename)
+
+
+@document_router.delete("/{file_id}")
+async def delete_document(
+    file_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: model_user.User = Depends(get_current_user)
+):
+    """Delete a specific document by filename."""
+    return await crud_document.delete_document(db, current_user, file_id)

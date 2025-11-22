@@ -4,6 +4,7 @@ import {
 import {
     apiGetDocuments,
     apiUploadFile,
+    apiDeleteDocument
 } from '../config.ts';
 import { apiFetch } from '../apiClient.ts';
 
@@ -25,6 +26,14 @@ export const documentService = {
             method: "POST",
             auth: true,
             body: formData,
+        });
+        return response;
+    },
+
+    async deleteDocument(documentId: string): Promise<boolean> {
+        const response = await apiFetch<boolean>(apiDeleteDocument(documentId), {
+            method: "DELETE",
+            auth: true,
         });
         return response;
     }
