@@ -3,14 +3,12 @@ import os
 import asyncio
 import threading
 
-from collections import deque
 from google import genai
 from google.genai import types
-
-from typing import Optional, List
+from sse_starlette.event import ServerSentEvent
 from dotenv import load_dotenv
 
-from src.llm.base import LLMBase, LLMResponse
+from src.app.core.llm.base import LLMBase
 
 
 load_dotenv(".env", override=True)
@@ -22,10 +20,10 @@ class GeminiProvider(LLMBase):
     Gemini LLM provider implementation.
     """
 
-    def __init__(self, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
         """
         :param api_key: Google Generative AI API key
-        :param model_name: Gemini model name (e.g. "gemini-1.5-pro" or "gemini-1.5-flash")
+        :param model_name: Gemini model name (e.g. "gemini-2.5-pro" or "gemini-2.5-flash")
         """
         super().__init__(provider_name="gemini")
         self.model_name = model_name
@@ -82,13 +80,21 @@ class GeminiProvider(LLMBase):
 
             for chunk in response_stream:
                 if chunk.text:
-                    loop.call_soon_threadsafe(queue.put_nowait, chunk.text)
-
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait,
+                        ServerSentEvent(data=chunk.text, event="message")
+                    )
         except Exception as e:
-            loop.call_soon_threadsafe(queue.put_nowait, f"[Error] Gemini streaming failed: {e}")
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                ServerSentEvent(data=f"[Error] Gemini streaming failed: {e}", event="error")
+            )
 
         finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                ServerSentEvent(data="[DONE]", event="done")
+            )
 
     async def generate(self, query: str):
         """
@@ -105,7 +111,7 @@ class GeminiProvider(LLMBase):
 
         while True:
             chunk = await queue.get()
-            if chunk is None:
+            if chunk.event in ("error", "done"):
                 break
             yield chunk
 
@@ -119,6 +125,12 @@ if __name__ == "__main__":
 
         print("Gemini Response:")
         async for chunk in gemini.generate(query):
-            print(chunk, end="", flush=True)
+            if chunk.event == "message":
+                print(chunk.data, end="", flush=True)
+            elif chunk.event == "error":
+                print(chunk.data, end="", flush=True)
+            elif chunk.event == "done":
+                print(chunk.data, end="", flush=True)
+                break
 
     asyncio.run(main())

@@ -11,3 +11,4 @@ passlib
 python-jose
 argon2_cffi
 python-multipart
+sse-starlette
