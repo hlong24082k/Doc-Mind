@@ -46,15 +46,6 @@ export const authService = {
     return response;
   },
 
-  /**
-   * Try to refresh access token using stored refresh_token.
-   */
-  async refreshToken(): Promise<string | null> {
-    console.warn("[Auth Refresh] Refresh token flow not supported by API.");
-    this.logout();
-    return null;
-  },
-
   logout() {
     localStorage.removeItem("access_token");
     localStorage.removeItem("token_type");

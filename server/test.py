@@ -1,4 +1,4 @@
-from src.app.config import settings
+from app.config import settings
 
 
 if __name__ == "__main__":
