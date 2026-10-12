@@ -1,18 +1,14 @@
-import os
-
 import asyncio
 import threading
+from typing import AsyncIterator
 
 from google import genai
 from google.genai import types
 from sse_starlette.event import ServerSentEvent
-from dotenv import load_dotenv
 
-from app.core.llm.base import LLMBase
-
-
-load_dotenv(".env", override=True)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+from app.config import settings
+from app.core.errors import LLMGenerationError
+from app.core.llm.base import LLMBase, LLMResponse
 
 
 class GeminiProvider(LLMBase):
@@ -20,19 +16,27 @@ class GeminiProvider(LLMBase):
     Gemini LLM provider implementation.
     """
 
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        *,
+        api_key: str | None = None,
+        thinking_level: str | None = None,
+    ):
         """
-        :param api_key: Google Generative AI API key
-        :param model_name: Gemini model name (e.g. "gemini-2.5-pro" or "gemini-2.5-flash")
+        :param model_name: Gemini model name, mặc định settings.gemini_model
+        :param api_key: Google API key, mặc định settings.gemini_api_key
+        :param thinking_level: minimal | low | medium | high
         """
         super().__init__(provider_name="gemini")
-        self.model_name = model_name
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.model_name = model_name or settings.gemini_model
+        self.thinking_level = thinking_level or settings.gemini_thinking_level
+        self.client = genai.Client(api_key=api_key or settings.gemini_api_key)
 
         self.safety_settings = [
             types.SafetySetting(
-                category= types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_NONE, # BLOCK_LOW_AND_ABOVE
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
@@ -48,89 +52,128 @@ class GeminiProvider(LLMBase):
             ),
         ]
 
-    def __run_gemini_stream_in_thread(self, query: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    @staticmethod
+    def _build_contents(query: str) -> list[types.Content]:
+        return [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=query)],
+            ),
+        ]
+
+    def _build_config(
+        self, system_instruction: str | None
+    ) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(
+                thinking_level=self.thinking_level,
+            ),
+            safety_settings=self.safety_settings,
+            system_instruction=system_instruction,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
+
+    def _run_stream_in_thread(
+        self,
+        query: str,
+        system_instruction: str | None,
+        queue: asyncio.Queue,
+        loop: asyncio.AbstractEventLoop,
+    ):
         """
         Internal method to run Gemini streaming in a separate thread.
         """
         try:
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=query),
-                    ],
-                ),
-            ]
-
-            generate_content_config = types.GenerateContentConfig(
-                thinking_config = types.ThinkingConfig(
-                    thinking_budget=0,
-                ),
-                safety_settings=self.safety_settings,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True
-                ),
-            )
-
             response_stream = self.client.models.generate_content_stream(
                 model=self.model_name,
-                contents=contents,
-                config=generate_content_config,
+                contents=self._build_contents(query),
+                config=self._build_config(system_instruction),
             )
 
             for chunk in response_stream:
                 if chunk.text:
                     loop.call_soon_threadsafe(
                         queue.put_nowait,
-                        ServerSentEvent(data=chunk.text, event="message")
+                        ServerSentEvent(data=chunk.text, event="message"),
                     )
         except Exception as e:
             loop.call_soon_threadsafe(
                 queue.put_nowait,
-                ServerSentEvent(data=f"[Error] Gemini streaming failed: {e}", event="error")
+                ServerSentEvent(
+                    data=f"[Error] Gemini streaming failed: {e}",
+                    event="error",
+                ),
             )
-
         finally:
             loop.call_soon_threadsafe(
-                queue.put_nowait,
-                ServerSentEvent(data="[DONE]", event="done")
+                queue.put_nowait, ServerSentEvent(data="[DONE]", event="done")
             )
 
-    async def generate(self, query: str):
-        """
-        Generate text using Gemini model.
-        """
+    async def _generate_stream(
+        self, query: str, system_instruction: str | None
+    ) -> AsyncIterator[ServerSentEvent]:
         loop = asyncio.get_running_loop()
-        queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue()
 
         threading.Thread(
-            target=self.__run_gemini_stream_in_thread,
-            args=(query, queue, loop),
-            daemon=True
+            target=self._run_stream_in_thread,
+            args=(query, system_instruction, queue, loop),
+            daemon=True,
         ).start()
 
         while True:
             chunk = await queue.get()
-            if chunk.event in ("error", "done"):
+            if chunk.event == "done":
                 break
             yield chunk
+            if chunk.event == "error":
+                break
+
+    async def _generate_once(
+        self, query: str, system_instruction: str | None
+    ) -> LLMResponse:
+        try:
+            resp = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=self._build_contents(query),
+                config=self._build_config(system_instruction),
+            )
+        except Exception as e:
+            raise LLMGenerationError(f"Gemini generation failed: {e}") from e
+
+        finish_reason = None
+        if resp.candidates:
+            finish_reason = resp.candidates[0].finish_reason
+        return LLMResponse(
+            text=resp.text,
+            provider=self.provider,
+            metadata={
+                "model": self.model_name,
+                "finish_reason": (
+                    str(finish_reason) if finish_reason is not None else None
+                ),
+                "usage": (
+                    resp.usage_metadata.model_dump() if resp.usage_metadata else None
+                ),
+            },
+        )
 
 
 if __name__ == "__main__":
-    import asyncio
 
     async def main():
-        gemini = GeminiProvider(model_name="gemini-2.5-flash")
+        gemini = GeminiProvider()
         query = "Explain the theory of relativity in simple terms."
 
-        print("Gemini Response:")
+        print("Gemini Response (stream):")
         async for chunk in gemini.generate(query):
-            if chunk.event == "message":
-                print(chunk.data, end="", flush=True)
-            elif chunk.event == "error":
-                print(chunk.data, end="", flush=True)
-            elif chunk.event == "done":
-                print(chunk.data, end="", flush=True)
-                break
+            print(chunk.data, end="", flush=True)
+
+        print("\n\nGemini Response (non-stream):")
+        resp = await gemini.generate(query, stream=False)
+        print(resp.text)
+        print(resp.metadata)
 
     asyncio.run(main())

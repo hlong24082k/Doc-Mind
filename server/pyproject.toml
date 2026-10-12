@@ -21,6 +21,12 @@ dependencies = [
     "sqlalchemy>=2.0.38",
     "sse-starlette>=3.4.11",
     "uvicorn>=0.53.0",
+    "laya-mlx>=0.4.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "alembic>=1.16",
+    "pgvector>=0.4.1",
+    "pymupdf>=1.26",
+    "tokenizers>=0.21",
+    "tenacity>=9.0",
 ]
 
 [build-system]
@@ -41,3 +47,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

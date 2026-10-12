@@ -228,3 +228,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 .agents/
+.claude/
+
+docs/data/
+docs/usaged/
