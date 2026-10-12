@@ -1,8 +1,8 @@
 import asyncio
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import ProgrammingError
 
-from app.db.base import Base
 from app.db.session import engine, AsyncSessionLocal
 # Import models to ensure they are registered with Base.metadata
 from app.models.user import User
@@ -12,12 +12,19 @@ from app.config import settings
 
 
 async def init_db_async():
-    """Initialize PostgreSQL database tables and seed default superuser."""
+    """Check migration state and seed default superuser."""
     try:
-        # Create tables
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("PostgreSQL tables checked/created successfully.")
+        # Schema được quản lý bởi Alembic, chỉ kiểm tra đã migrate chưa
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                )
+        except ProgrammingError:
+            raise RuntimeError(
+                "Database chưa được migrate. "
+                "Chạy: uv run alembic upgrade head"
+            )
 
         # Seed superuser
         async with AsyncSessionLocal() as session:

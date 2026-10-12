@@ -49,6 +49,44 @@ class Settings(BaseSettings):
 
     # ---- Gemini setting ----
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_thinking_level: str = "minimal"  # minimal | low | medium | high
+
+    # ---- Embedding ----
+    embedding_model: str = "gemini-embedding-2"
+    embedding_dim: int = 768  # phải khớp vector(768) trong migration
+    embedding_batch_size: int = 32  # hard limit API = 100
+    embedding_max_retries: int = 6
+    embedding_query_task: str = "question answering"  # hoặc "search result"
+
+    # ---- Chunking ----
+    chunk_tokenizer: str = "answerdotai/ModernBERT-large"
+    chunk_target_tokens: int = 384
+    chunk_overlap_tokens: int = 64
+    chunk_max_tokens: int = 512
+    chunk_min_tokens: int = 64
+    chunk_include_references: bool = False
+
+    # ---- Retrieval ----
+    retrieval_dense_k: int = 50
+    retrieval_sparse_k: int = 50
+    retrieval_rrf_k: int = 60
+    retrieval_dense_weight: float = 1.0
+    retrieval_sparse_weight: float = 1.0
+    retrieval_candidates: int = 30  # số candidate đưa vào reranker
+    hnsw_ef_search: int = 100
+    retrieval_min_dense_score: float = 0.65
+
+    # ---- Rerank ----
+    reranker: str = "laya"  # laya | none
+    laya_model: str = "aac6fef/laya-typed-decisions-mlx"
+    laya_dtype: str = "float16"
+    rerank_top_n: int = 3
+    rerank_min_score: float = 0.10  # sẽ tune lại bằng eval
+
+    # ---- Generation ----
+    context_window: int = 0  # số chunk liền kề mỗi phía (small-to-big)
+    context_max_tokens: int = 6000
 
     # Helper database configure ----
     @property

@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:16-alpine
+    image: paradedb/paradedb:0.26.1-pg17
     container_name: docmind_postgres
     restart: always
     environment:
@@ -10,11 +8,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-docmind}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - paradedb_data:/var/lib/postgresql/data
     env_file:
       - server/.env
 
 volumes:
-  postgres_data:
+  paradedb_data:
