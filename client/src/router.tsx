@@ -30,7 +30,7 @@ const Router = () => (
         <Route path="/" element={<Navigate to="/documents" replace />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/chat" element={<ChatPage />} />
-        <Route path="/chat/:documentId" element={<ChatPage />} />
+        <Route path="/chat/:conversationId" element={<ChatPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

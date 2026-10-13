@@ -1,93 +1,229 @@
+import asyncio
+import hashlib
+import os
 import uuid
-from datetime import datetime
-from typing import List
+from pathlib import Path
+
 from loguru import logger
-from sqlalchemy import select, delete
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile
 
-from app.models import (
-    document as model_document,
-    user as model_user,
-)
+from app.config import settings
+from app.cruds import Conflict
+from app.models.document import Document
+from app.models.user import User
+from app.schemas.document import Usage
+
+CHUNK = 1 << 20
+PDF_MAGIC = b"%PDF-"
 
 
-async def create_document(
+class UploadRejected(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def usage(db: AsyncSession, user_id: str) -> Usage:
+    used, count = (
+        await db.execute(
+            select(func.coalesce(func.sum(Document.size_bytes), 0), func.count()).where(
+                Document.user_id == user_id
+            )
+        )
+    ).one()
+    return Usage(
+        bytes=used,
+        documents=count,
+        quota_bytes=settings.user_quota_mb << 20,
+        quota_documents=settings.user_quota_documents,
+    )
+
+
+async def list_documents(db: AsyncSession, user: User) -> list[Document]:
+    return list(
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.user_id == user.id)
+                .order_by(Document.created_at.desc())
+            )
+        ).scalars()
+    )
+
+
+async def copy_to_tmp(file: UploadFile, user_dir: Path) -> tuple[Path, str, int]:
+    """Copy file đã spool → user_dir/.tmp-{uuid}.pdf theo khối 1 MiB, tính
+    sha256. 5 byte đầu != %PDF- → UploadRejected("not_pdf"), không tạo tmp."""
+    await file.seek(0)
+    head = await file.read(len(PDF_MAGIC))
+    if head != PDF_MAGIC:
+        raise UploadRejected("not_pdf")
+
+    digest = hashlib.sha256()
+    size = 0
+    tmp = user_dir / f".tmp-{uuid.uuid4().hex}.pdf"
+    out = await asyncio.to_thread(open, tmp, "wb")
+
+    def sink(chunk: bytes) -> None:
+        digest.update(chunk)
+        out.write(chunk)
+
+    try:
+        chunk = head
+        while chunk:
+            await asyncio.to_thread(sink, chunk)
+            size += len(chunk)
+            chunk = await file.read(CHUNK)  # Starlette đã tự offload
+    except BaseException:
+        out.close()
+        tmp.unlink(missing_ok=True)
+        raise
+    await asyncio.to_thread(out.close)
+    return tmp, digest.hexdigest(), size
+
+
+async def upsert_upload(
     db: AsyncSession,
-    current_user: model_user.User,
-    files_in: List[str]
-) -> List[model_document.Document]:
-    """Create document records in PostgreSQL for the given filenames.
-
-    Ensures uniqueness by document name for the current user. If a name already exists
-    it will be skipped and reported in a warning. If none of the provided names
-    can be inserted because they all exist, a ValueError is raised.
-    Returns a list of created Document models.
-    """
-    created: List[model_document.Document] = []
-    skipped: List[str] = []
-
-    for name in files_in:
-        file_name = name.split(".")[0]
-
-        stmt = select(model_document.Document).where(
-            model_document.Document.name == file_name,
-            model_document.Document.user_id == current_user.id,
+    user: User,
+    name: str,
+    tmp: Path,
+    content_hash: str,
+    size: int,
+) -> tuple[Document | None, str | None]:
+    """Một transaction, khóa row user để tính quota tuần tự theo user.
+    os.replace chạy TRƯỚC commit: worker dùng SKIP LOCKED nên không claim
+    được row đang khóa, và khi thấy row thì file trên đĩa đã là bản mới.
+    Mọi nhánh reject và mọi exception đều xóa tmp."""
+    try:
+        await db.execute(
+            text("SELECT 1 FROM users WHERE id = :uid FOR UPDATE"),
+            {"uid": user.id},
         )
-        result = await db.execute(stmt)
-        existing = result.scalars().first()
-        if existing:
-            skipped.append(name)
-            continue
-
-        doc = model_document.Document(
-            id=str(uuid.uuid4()),
-            user_id=current_user.id,
-            name=file_name,
-            created_at=datetime.utcnow(),
+        existing = (
+            (
+                await db.execute(
+                    select(Document)
+                    .where(
+                        Document.user_id == user.id,
+                        func.lower(Document.name) == func.lower(name),
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .first()
         )
+        used = await usage(db, user.id)
+        new_bytes = used.bytes - (existing.size_bytes if existing else 0) + size
+        new_docs = used.documents + (0 if existing else 1)
 
-        try:
-            db.add(doc)
-            await db.commit()
-            await db.refresh(doc)
-            created.append(doc)
-        except IntegrityError:
+        reason = None
+        if new_bytes > used.quota_bytes or new_docs > used.quota_documents:
+            reason = "quota_exceeded"
+        elif existing and existing.status == "processing":
+            reason = "busy"
+        elif (
+            existing
+            and existing.content_hash == content_hash
+            and existing.status in ("pending", "indexed")
+        ):
+            reason = "unchanged"
+        if reason:
             await db.rollback()
-            skipped.append(name)
+            tmp.unlink(missing_ok=True)
+            return None, reason
 
-    if not created and skipped:
-        raise ValueError(f"Document(s) already exist: {', '.join(skipped)}")
-
-    if skipped:
-        logger.warning(
-            "Some documents were skipped because they already exist: {}", skipped
+        if existing is None:
+            doc = Document(
+                user_id=user.id,
+                name=name,
+                status="pending",
+                content_hash=content_hash,
+                size_bytes=size,
+            )
+            db.add(doc)
+            await db.flush()
+        else:  # giữ nguyên existing.name (cách viết hoa/thường cũ)
+            doc = existing
+            doc.status = "pending"
+            doc.content_hash = content_hash
+            doc.size_bytes = size
+            doc.attempts = 0
+            doc.error = None
+            doc.claimed_at = None
+        await asyncio.to_thread(
+            os.replace, tmp, settings.document_file_path(user.id, doc.name)
         )
+        await db.commit()
+        return doc, None
+    except BaseException:
+        await db.rollback()
+        tmp.unlink(missing_ok=True)
+        raise
 
-    return created
 
-
-async def delete_document(
-    db: AsyncSession,
-    current_user: model_user.User,
-    document_id: str
-) -> bool:
-    """Delete a document from PostgreSQL."""
-    stmt = delete(model_document.Document).where(
-        model_document.Document.id == document_id,
-        model_document.Document.user_id == current_user.id,
+async def get_owned(db: AsyncSession, user: User, document_id: str) -> Document | None:
+    return (
+        (
+            await db.execute(
+                select(Document).where(
+                    Document.id == document_id, Document.user_id == user.id
+                )
+            )
+        )
+        .scalars()
+        .first()
     )
-    result = await db.execute(stmt)
+
+
+async def delete_owned(db: AsyncSession, user: User, document_id: str) -> bool:
+    """Xóa row (chunk bị cascade) rồi xóa file."""
+    name = (
+        await db.execute(
+            delete(Document)
+            .where(Document.id == document_id, Document.user_id == user.id)
+            .returning(Document.name)
+        )
+    ).scalar_one_or_none()
     await db.commit()
-    return bool(result.rowcount and result.rowcount > 0)
+    if name is None:
+        return False
+    try:
+        path = settings.document_file_path(user.id, name)
+        await asyncio.to_thread(path.unlink, missing_ok=True)
+    except (OSError, ValueError):
+        logger.exception("cannot delete file of document {}", document_id)
+    return True
 
 
-async def get_documents(
-    db: AsyncSession, current_user: model_user.User
-) -> List[model_document.Document]:
-    """Return all documents belonging to current_user from PostgreSQL."""
-    stmt = select(model_document.Document).where(
-        model_document.Document.user_id == current_user.id
+async def requeue_owned(
+    db: AsyncSession, user: User, document_id: str
+) -> Document | None:
+    """Đưa về pending, attempts=0. Raise Conflict nếu đang processing."""
+    doc = (
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.id == document_id, Document.user_id == user.id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
     )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    if doc is None:
+        await db.rollback()
+        return None
+    if doc.status == "processing":
+        await db.rollback()
+        raise Conflict("Document is processing")
+    await db.execute(
+        update(Document)
+        .where(Document.id == doc.id)
+        .values(status="pending", attempts=0, error=None, claimed_at=None)
+    )
+    await db.commit()
+    await db.refresh(doc)
+    return doc

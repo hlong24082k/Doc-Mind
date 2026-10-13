@@ -1,16 +1,19 @@
 import asyncio
 import hashlib
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from loguru import logger
 
 from app.core.domain import (
     ChunkDraft,
+    DocumentRecord,
     DocumentStatus,
     EmbeddedChunk,
     IngestReport,
 )
+from app.core.errors import DocumentLoadError
 from app.core.interfaces import (
     Chunker,
     ChunkWriter,
@@ -18,6 +21,7 @@ from app.core.interfaces import (
     DocumentStore,
     Embedder,
 )
+from app.core.storage.naming import canonical_document_name
 
 
 def embed_text(draft: ChunkDraft) -> str:
@@ -49,9 +53,13 @@ class IngestionPipeline:
     async def ingest(
         self, path: Path, user_id: str, *, force: bool = False
     ) -> IngestReport:
+        """CLI: hash → get_or_create → skip → mark_processing → run()."""
         path = Path(path)
+        name = canonical_document_name(path.name)
+        if name is None:
+            raise DocumentLoadError(f"Tên file không hợp lệ: {path.name!r}")
         content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-        doc = await self.documents.get_or_create(user_id, path.stem)
+        doc = await self.documents.get_or_create(user_id, name)
         if (
             doc.status == DocumentStatus.INDEXED
             and doc.content_hash == content_hash
@@ -66,39 +74,44 @@ class IngestionPipeline:
             )
 
         await self.documents.mark_processing(doc.id)
-        timings: dict[str, float] = {}
         try:
-            t = time.perf_counter()
-            parsed = await asyncio.to_thread(self.loader.load, path)
-            timings["load"] = _ms(t)
-
-            t = time.perf_counter()
-            drafts = await asyncio.to_thread(self.chunker.chunk, parsed)
-            timings["chunk"] = _ms(t)
-
-            t = time.perf_counter()
-            vectors = await self.embedder.embed_documents(
-                parsed.title, [embed_text(d) for d in drafts]
-            )
-            timings["embed"] = _ms(t)
-
-            t = time.perf_counter()
-            n = await self.chunks.replace_document_chunks(
-                doc.id,
-                user_id,
-                [EmbeddedChunk(d, tuple(v)) for d, v in zip(drafts, vectors)],
-            )
-            await self.documents.mark_indexed(
-                doc.id,
-                title=parsed.title,
-                num_pages=parsed.num_pages,
-                num_chunks=n,
-                content_hash=content_hash,
-            )
-            timings["store"] = _ms(t)
+            return await self.run(replace(doc, content_hash=content_hash), path)
         except Exception as e:
             await self.documents.mark_failed(doc.id, f"{type(e).__name__}: {e}")
             raise
+
+    async def run(self, doc: DocumentRecord, path: Path) -> IngestReport:
+        """load → chunk → embed → replace_document_chunks → mark_indexed.
+        KHÔNG gọi mark_processing / mark_failed (caller lo phần đó)."""
+        timings: dict[str, float] = {}
+        t = time.perf_counter()
+        parsed = await asyncio.to_thread(self.loader.load, path)
+        timings["load"] = _ms(t)
+
+        t = time.perf_counter()
+        drafts = await asyncio.to_thread(self.chunker.chunk, parsed)
+        timings["chunk"] = _ms(t)
+
+        t = time.perf_counter()
+        vectors = await self.embedder.embed_documents(
+            parsed.title, [embed_text(d) for d in drafts]
+        )
+        timings["embed"] = _ms(t)
+
+        t = time.perf_counter()
+        n = await self.chunks.replace_document_chunks(
+            doc.id,
+            doc.user_id,
+            [EmbeddedChunk(d, tuple(v)) for d, v in zip(drafts, vectors)],
+        )
+        await self.documents.mark_indexed(
+            doc.id,
+            title=parsed.title,
+            num_pages=parsed.num_pages,
+            num_chunks=n,
+            content_hash=doc.content_hash,
+        )
+        timings["store"] = _ms(t)
         return IngestReport(
             document_id=doc.id,
             title=parsed.title,

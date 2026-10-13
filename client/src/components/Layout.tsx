@@ -13,7 +13,7 @@ interface LayoutProps {
 
 const navItems = [
   { to: "/documents", label: "Documents", icon: FileText },
-  { to: "/chat", label: "New Chat", icon: MessageSquare },
+  { to: "/chat", label: "Chats", icon: MessageSquare },
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -34,7 +34,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const renderNavLinks = (className?: string) =>
     navItems.map((item) => {
       const Icon = item.icon;
-      const isActive = location.pathname === item.to;
+      const isActive = location.pathname.startsWith(item.to);
       return (
         <Link
           key={item.to}

@@ -55,10 +55,17 @@ class DocumentStore(Protocol):
         title: str,
         num_pages: int,
         num_chunks: int,
-        content_hash: str,
+        content_hash: str | None,
     ) -> None: ...
 
     async def mark_failed(self, document_id: str, error: str) -> None: ...
+
+    async def claim_next(self, *, stale_after_s: int) -> DocumentRecord | None: ...
+
+    async def requeue(self, document_id: str, error: str) -> None: ...
+
+    # shutdown: về pending, attempts-1
+    async def release(self, document_id: str) -> None: ...
 
 
 class ChunkWriter(Protocol):

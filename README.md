@@ -99,6 +99,8 @@ Doc-Mind/
     │   ├── schemas/         # Pydantic request and response schemas
     │   └── security/        # JWT utilities and password verification
     └── scripts/
+        ├── ingest_worker.py # Standalone ingestion worker (Postgres queue)
+        ├── load_chat.py     # Concurrent chat load check (TTFT p50/p95)
         ├── run_server.sh    # Server runner script
         └── seed.py          # Database seeding script
 ```
@@ -222,16 +224,58 @@ docker compose up -d postgres
 
 ## 📡 API Overview
 
+All routes are mounted under `/api`. Every route except `auth/*` and `heartbeat/*` requires `Authorization: Bearer <jwt>` and only sees the caller's own data (other users' resources return `404`).
+
 | Method | Endpoint | Description | Auth Required |
 |---|---|---|:---:|
-| `GET` | `/api/heartbeat/` | Health check endpoint | No |
+| `GET` | `/api/heartbeat/health` | Health check endpoint | No |
 | `POST` | `/api/auth/register` | Register a new user | No |
 | `POST` | `/api/auth/login` | Log in and receive JWT access token | No |
-| `GET` | `/api/document/` | Retrieve all documents for the authenticated user | Yes |
-| `POST` | `/api/document/uploadfile` | Upload one or multiple document files | Yes |
-| `GET` | `/api/document/{filename}` | Download a document file by filename | No |
-| `DELETE` | `/api/document/{file_id}` | Delete a document by file ID | Yes |
-| `POST` | `/api/conversation/stream` | Stream AI conversational response (SSE) | No |
+| `GET` | `/api/document/` | List documents (newest first) + storage usage | Yes |
+| `POST` | `/api/document/uploadfile` | Upload up to 10 PDFs (multipart `files`); queued for ingestion | Yes |
+| `GET` | `/api/document/{id}/file` | Open the original PDF (inline) | Yes |
+| `POST` | `/api/document/{id}/reindex` | Re-queue a document for ingestion | Yes |
+| `DELETE` | `/api/document/{id}` | Delete a document, its chunks and its file | Yes |
+| `POST` | `/api/conversation/` | Create a chat over 1..10 indexed documents | Yes |
+| `GET` | `/api/conversation/` | List chats (latest 100) | Yes |
+| `GET` | `/api/conversation/{id}` | Chat detail with the latest 200 messages | Yes |
+| `DELETE` | `/api/conversation/{id}` | Delete a chat | Yes |
+| `POST` | `/api/conversation/{id}/messages` | Ask a question; answer streamed as SSE (`meta`, `contexts`, `token`, `final`, `error`) | Yes |
+
+Upload limits (see `server/.env.example`): 25 MB per file, 10 files and 100 MB per request, per-process upload slots (`503`), minimum free disk (`507`) and a per-user quota (`409 quota_exceeded`).
+
+### Ingestion worker
+
+Uploaded PDFs are stored at `DOCUMENTS_FOLDER/{user_id}/{name}.pdf` and queued in Postgres (`documents.status = 'pending'`). By default the API process runs the worker. To scale ingestion separately:
+
+```bash
+cd server
+# API: INGEST_WORKER_ENABLED=false in .env, then run one or more workers
+uv run python scripts/ingest_worker.py
+```
+
+### Uploads temp folder
+
+Multipart files larger than 1 MB are spooled to the system temp folder. Point `TMPDIR` at a folder on the same volume as `DOCUMENTS_FOLDER` (it must be set in the process environment, not in `.env` settings):
+
+```bash
+cd server
+mkdir -p documents/.upload-tmp
+export TMPDIR=$PWD/documents/.upload-tmp
+python server.py
+```
+
+### Behind a reverse proxy
+
+Set `client_max_body_size` (nginx) to at least `UPLOAD_MAX_REQUEST_MB` so oversized uploads are rejected at the network layer, and disable response buffering for `text/event-stream` so chat tokens are not delayed.
+
+### Load check
+
+```bash
+cd server
+uv run python scripts/load_chat.py --users 20 --questions 3 \
+  --conversation <ID> --token <JWT>   # repeat --conversation/--token for more users
+```
 
 ---
 
