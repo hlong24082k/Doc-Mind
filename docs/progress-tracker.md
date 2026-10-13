@@ -28,6 +28,7 @@ change.
   - Gemini streaming via async SDK; `get_current_user` uses its own short session; DB pool from settings.
   - Tests: ingest worker, query rewriter, naming, auth-required, upload route/helpers. `scripts/load_chat.py`.
   - Client: Documents page (status badges, polling, usage, multi-select chat, open PDF), Chat page (conversation list, new chat dialog, streaming with citations/sources, stop/retry), `apiStream`, 401 → login.
+- (2026-10-13) CI: `.github/workflows/ci.yml` on PRs and pushes to `develop`/`main` — server `uv sync --locked` + `pytest`; client `npm ci`, lint, `tsc --noEmit`, build. No DB/Gemini needed (tests use fakes). `make quality` not in CI (see Open Questions).
 
 ## In Progress
 
@@ -35,7 +36,6 @@ change.
 
 ## Next Up
 
-- Fix client build: `tailwindcss@4` is installed but `postcss.config.js` / `globals.css` use the v3 setup (`npm run build` fails before this branch too).
 - Run eval baseline and tune `rerank_min_score` / `retrieval_min_dense_score`.
 
 ## Open Questions
