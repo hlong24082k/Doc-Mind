@@ -1,5 +1,6 @@
 """Composition root: nơi duy nhất đọc app.config.settings."""
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 
@@ -9,11 +10,13 @@ from app.config import Settings, settings
 from app.core.embedding.gemini_embedder import GeminiEmbedder
 from app.core.generation.answer_generator import AnswerGenerator
 from app.core.generation.context_builder import ContextBuilder
+from app.core.generation.query_rewriter import QueryRewriter
 from app.core.ingestion.chunker import StructuredChunker
 from app.core.ingestion.pdf_loader import PyMuPDFLoader
 from app.core.ingestion.pipeline import IngestionPipeline
 from app.core.ingestion.tokenizer import HFTokenCounter
-from app.core.interfaces import Reranker, Retriever
+from app.core.ingestion.worker import IngestionWorker
+from app.core.interfaces import Embedder, Reranker, Retriever
 from app.core.llm.gemini_provider import GeminiProvider
 from app.core.rag_service import RAGService
 from app.core.rerank.laya_reranker import LayaReranker
@@ -42,22 +45,33 @@ def _genai_client(api_key: str) -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def build_embedder(s: Settings = settings) -> GeminiEmbedder:
+def _llm(s: Settings) -> GeminiProvider:
+    return GeminiProvider(s.gemini_model, client=_genai_client(s.gemini_api_key))
+
+
+def build_embedder(
+    s: Settings = settings, max_retries: int | None = None
+) -> GeminiEmbedder:
     return GeminiEmbedder(
         _genai_client(s.gemini_api_key),
         model=s.embedding_model,
         dimension=s.embedding_dim,
         batch_size=s.embedding_batch_size,
-        max_retries=s.embedding_max_retries,
+        max_retries=max_retries or s.embedding_max_retries,
         query_task=s.embedding_query_task,
     )
 
 
 def build_retriever(
-    mode: Literal["dense", "sparse", "hybrid"], s: Settings = settings
+    mode: Literal["dense", "sparse", "hybrid"],
+    s: Settings = settings,
+    *,
+    embedder: Embedder | None = None,
 ) -> Retriever:
     dense = PgVectorRetriever(
-        AsyncSessionLocal, build_embedder(s), ef_search=s.hnsw_ef_search
+        AsyncSessionLocal,
+        embedder or build_embedder(s),
+        ef_search=s.hnsw_ef_search,
     )
     sparse = ParadeDBBM25Retriever(AsyncSessionLocal)
     if mode == "dense":
@@ -114,10 +128,13 @@ def build_rag_service(
     mode: Literal["dense", "sparse", "hybrid"] = "hybrid",
     reranker: str | None = None,
     s: Settings = settings,
+    query_max_retries: int | None = None,
 ) -> RAGService:
     reranker_name = (reranker or s.reranker).lower()
+    # embedder phía query retry ít hơn: user không phải chờ hàng phút khi 429
+    embedder = build_embedder(s, max_retries=query_max_retries)
     return RAGService(
-        retriever=build_retriever(mode, s),
+        retriever=build_retriever(mode, s, embedder=embedder),
         reranker=build_reranker(reranker_name, s),
         context_builder=ContextBuilder(
             PgChunkRepository(AsyncSessionLocal),
@@ -125,9 +142,43 @@ def build_rag_service(
             window=s.context_window,
             max_tokens=s.context_max_tokens,
         ),
-        generator=AnswerGenerator(GeminiProvider(s.gemini_model)),
+        generator=AnswerGenerator(_llm(s)),
         candidates=s.retrieval_candidates,
         top_n=s.rerank_top_n,
         min_score=None if reranker_name == "none" else s.rerank_min_score,
         min_dense_score=s.retrieval_min_dense_score or None,
+    )
+
+
+def build_query_rewriter(s: Settings = settings) -> QueryRewriter:
+    return QueryRewriter(_llm(s), timeout_s=s.query_rewrite_timeout_s)
+
+
+def build_ingest_worker(s: Settings = settings) -> IngestionWorker:
+    return IngestionWorker(
+        build_ingestion_pipeline(s),
+        PgDocumentRepository(AsyncSessionLocal),
+        lambda d: s.document_file_path(d.user_id, d.name),
+        concurrency=s.ingest_concurrency,
+        poll_interval_s=s.ingest_poll_interval_s,
+        max_attempts=s.ingest_max_attempts,
+        stale_after_s=s.ingest_stale_after_s,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ApiServices:
+    rag: RAGService
+    rewriter: QueryRewriter
+
+
+def build_api_services(s: Settings = settings) -> ApiServices:
+    """Gọi một lần trong lifespan; mọi object đều stateless."""
+    return ApiServices(
+        rag=build_rag_service(
+            reranker=s.api_reranker,
+            s=s,
+            query_max_retries=s.embedding_query_max_retries,
+        ),
+        rewriter=build_query_rewriter(s),
     )

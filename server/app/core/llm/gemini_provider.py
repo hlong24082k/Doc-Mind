@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from typing import AsyncIterator
 
 from google import genai
@@ -22,16 +21,18 @@ class GeminiProvider(LLMBase):
         *,
         api_key: str | None = None,
         thinking_level: str | None = None,
+        client: genai.Client | None = None,
     ):
         """
         :param model_name: Gemini model name, mặc định settings.gemini_model
         :param api_key: Google API key, mặc định settings.gemini_api_key
         :param thinking_level: minimal | low | medium | high
+        :param client: client dùng chung (factory truyền vào)
         """
         super().__init__(provider_name="gemini")
         self.model_name = model_name or settings.gemini_model
         self.thinking_level = thinking_level or settings.gemini_thinking_level
-        self.client = genai.Client(api_key=api_key or settings.gemini_api_key)
+        self.client = client or genai.Client(api_key=api_key or settings.gemini_api_key)
 
         self.safety_settings = [
             types.SafetySetting(
@@ -75,61 +76,24 @@ class GeminiProvider(LLMBase):
             ),
         )
 
-    def _run_stream_in_thread(
-        self,
-        query: str,
-        system_instruction: str | None,
-        queue: asyncio.Queue,
-        loop: asyncio.AbstractEventLoop,
-    ):
-        """
-        Internal method to run Gemini streaming in a separate thread.
-        """
+    async def _generate_stream(
+        self, query: str, system_instruction: str | None
+    ) -> AsyncIterator[ServerSentEvent]:
+        # SDK async: không tốn OS thread mỗi request, và hủy được (client
+        # ngắt kết nối → CancelledError hủy luôn request HTTP tới Gemini)
         try:
-            response_stream = self.client.models.generate_content_stream(
+            stream = await self.client.aio.models.generate_content_stream(
                 model=self.model_name,
                 contents=self._build_contents(query),
                 config=self._build_config(system_instruction),
             )
-
-            for chunk in response_stream:
+            async for chunk in stream:
                 if chunk.text:
-                    loop.call_soon_threadsafe(
-                        queue.put_nowait,
-                        ServerSentEvent(data=chunk.text, event="message"),
-                    )
-        except Exception as e:
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                ServerSentEvent(
-                    data=f"[Error] Gemini streaming failed: {e}",
-                    event="error",
-                ),
+                    yield ServerSentEvent(data=chunk.text, event="message")
+        except Exception as e:  # CancelledError là BaseException → propagate
+            yield ServerSentEvent(
+                data=f"[Error] Gemini streaming failed: {e}", event="error"
             )
-        finally:
-            loop.call_soon_threadsafe(
-                queue.put_nowait, ServerSentEvent(data="[DONE]", event="done")
-            )
-
-    async def _generate_stream(
-        self, query: str, system_instruction: str | None
-    ) -> AsyncIterator[ServerSentEvent]:
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        threading.Thread(
-            target=self._run_stream_in_thread,
-            args=(query, system_instruction, queue, loop),
-            daemon=True,
-        ).start()
-
-        while True:
-            chunk = await queue.get()
-            if chunk.event == "done":
-                break
-            yield chunk
-            if chunk.event == "error":
-                break
 
     async def _generate_once(
         self, query: str, system_instruction: str | None

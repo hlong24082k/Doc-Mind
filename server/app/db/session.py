@@ -1,4 +1,5 @@
 from typing import AsyncGenerator
+
 from loguru import logger
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -12,6 +13,8 @@ from app.config import settings
 engine: AsyncEngine = create_async_engine(
     settings.db_uri,
     echo=False,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
     pool_pre_ping=True,
 )
 

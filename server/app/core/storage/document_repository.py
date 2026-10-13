@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.domain import DocumentRecord, DocumentStatus
@@ -17,7 +17,28 @@ def _to_record(d: Document) -> DocumentRecord:
         content_hash=d.content_hash,
         num_chunks=d.num_chunks,
         indexed_at=d.indexed_at,
+        attempts=d.attempts,
     )
+
+
+# Cột TIMESTAMP không có tz và app dùng utcnow() → luôn so với giờ UTC
+_CLAIM_SQL = text("""
+    UPDATE documents
+    SET status = 'processing', attempts = attempts + 1,
+        claimed_at = (now() AT TIME ZONE 'utc'), error = NULL
+    WHERE id = (
+      SELECT id FROM documents
+      WHERE status = 'pending'
+         OR (status = 'processing'
+             AND claimed_at < (now() AT TIME ZONE 'utc')
+                              - make_interval(secs => :stale))
+      ORDER BY created_at
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, user_id, name, title, status, content_hash, num_chunks,
+              attempts
+    """)
 
 
 class PgDocumentRepository:
@@ -32,7 +53,8 @@ class PgDocumentRepository:
                 (
                     await session.execute(
                         select(Document).where(
-                            Document.user_id == user_id, Document.name == name
+                            Document.user_id == user_id,
+                            func.lower(Document.name) == func.lower(name),
                         )
                     )
                 )
@@ -79,7 +101,7 @@ class PgDocumentRepository:
         title: str,
         num_pages: int,
         num_chunks: int,
-        content_hash: str,
+        content_hash: str | None,
     ) -> None:
         await self._update(
             document_id,
@@ -99,3 +121,41 @@ class PgDocumentRepository:
             error=error,
             indexed_at=datetime.utcnow(),
         )
+
+    async def claim_next(self, *, stale_after_s: int) -> DocumentRecord | None:
+        async with self._sf() as session:
+            row = (
+                await session.execute(_CLAIM_SQL, {"stale": float(stale_after_s)})
+            ).first()
+            await session.commit()
+        if row is None:
+            return None
+        return DocumentRecord(
+            id=row.id,
+            user_id=row.user_id,
+            name=row.name,
+            title=row.title,
+            status=DocumentStatus(row.status),
+            content_hash=row.content_hash,
+            num_chunks=row.num_chunks,
+            attempts=row.attempts,
+        )
+
+    async def requeue(self, document_id: str, error: str) -> None:
+        await self._update(document_id, status="pending", error=error, claimed_at=None)
+
+    async def release(self, document_id: str) -> None:
+        async with self._sf() as session:
+            await session.execute(
+                update(Document)
+                .where(
+                    Document.id == document_id,
+                    Document.status == "processing",
+                )
+                .values(
+                    status="pending",
+                    attempts=func.greatest(Document.attempts - 1, 0),
+                    claimed_at=None,
+                )
+            )
+            await session.commit()

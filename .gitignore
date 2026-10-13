@@ -1,6 +1,7 @@
 node_modules/
 
 documents/
+!client/src/components/documents/
 
 .DS_Store
 

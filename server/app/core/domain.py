@@ -56,6 +56,7 @@ class DocumentRecord:
     content_hash: str | None
     num_chunks: int
     indexed_at: datetime | None = None
+    attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)

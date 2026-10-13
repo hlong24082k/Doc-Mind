@@ -1,40 +1,53 @@
 import {
+    Document,
     DocumentsResponse,
+    UploadResponse,
 } from '../types/document';
 import {
     apiGetDocuments,
     apiUploadFile,
-    apiDeleteDocument
+    apiDeleteDocument,
+    apiDocumentFile,
+    apiReindexDocument,
 } from '../config.ts';
-import { apiFetch } from '../apiClient.ts';
+import { apiFetch, apiFetchBlob } from '../apiClient.ts';
 
 
-/**
- * Handles authentication: login, refresh, logout.
- */
 export const documentService = {
     async getDocuments(): Promise<DocumentsResponse> {
-        const response = await apiFetch<DocumentsResponse>(apiGetDocuments, {
+        return apiFetch<DocumentsResponse>(apiGetDocuments, {
             method: "GET",
             auth: true,
         });
-        return response;
     },
 
-    async uploadFile(formData: FormData): Promise<DocumentsResponse> {
-        const response = await apiFetch<DocumentsResponse>(apiUploadFile, {
+    async uploadFile(formData: FormData): Promise<UploadResponse> {
+        return apiFetch<UploadResponse>(apiUploadFile, {
             method: "POST",
             auth: true,
             body: formData,
         });
-        return response;
     },
 
-    async deleteDocument(documentId: string): Promise<boolean> {
-        const response = await apiFetch<boolean>(apiDeleteDocument(documentId), {
+    async deleteDocument(documentId: string): Promise<void> {
+        await apiFetch<void>(apiDeleteDocument(documentId), {
             method: "DELETE",
             auth: true,
         });
-        return response;
-    }
+    },
+
+    async reindex(documentId: string): Promise<Document> {
+        return apiFetch<Document>(apiReindexDocument(documentId), {
+            method: "POST",
+            auth: true,
+        });
+    },
+
+    /** Tải PDF kèm Bearer rồi mở ở tab mới (tại trang `page` nếu có). */
+    async openFile(documentId: string, page?: number): Promise<void> {
+        const blob = await apiFetchBlob(apiDocumentFile(documentId));
+        const url = URL.createObjectURL(blob);
+        window.open(url + (page ? `#page=${page}` : ""), "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
 };

@@ -35,7 +35,9 @@
 - Validate input with Pydantic schemas (`app/schemas`) before logic.
 - Require `Depends(get_current_user)` and filter by owner on every user-data route.
 - Errors via `HTTPException` with clear `detail`; list responses wrapped (`{"documents": [...]}`).
-- Streaming responses use `sse-starlette` `EventSourceResponse`.
+- Streaming responses use `sse-starlette` `EventSourceResponse`; SSE `data` is always JSON (even tokens).
+- Streaming routes do not depend on `get_db`; they use short sessions (`AsyncSessionLocal`) so no connection is held while streaming.
+- Never declare `UploadFile` / `File` params on upload routes; take `Request` and call `request.form()` after the checks.
 
 ## Data and Storage
 

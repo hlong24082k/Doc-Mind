@@ -5,41 +5,45 @@ change.
 
 ## Current Phase
 
-- In progress — RAG core done; integrating it into the API and UI.
+- In progress — RAG core wired into the API and UI (document + conversation API implemented); manual verification and load check pending.
 
 ## Current Goal
 
-- Branch `feat/build-document-endpoints`: wire RAG core into document endpoints (ingest on upload, status, chunks) and then into conversation.
+- Branch `feat/build-document-endpoints`: finish the verification checklist of `docs/specs/document-conversation-api.md` (§5).
 
 ## Completed
 
 - Auth: register/login (JWT + Argon2), protected client routes, Zustand auth store.
 - Documents: upload (multi-file), list, download, delete endpoints + Documents page.
-- Conversation: `/conversation/stream` SSE endpoint streaming Gemini output (plain LLM, no RAG).
+- Conversation: plain-LLM `/conversation/stream` (replaced on 2026-10-13 by the RAG conversation API below).
 - Postgres migration (from earlier store), ParadeDB image, Alembic (`0001_baseline`, `0002_rag_core`).
 - RAG core (`server/app/core`): PDF loader, structured chunker, Gemini embedder, pgvector + BM25 hybrid retrieval with RRF, Laya/NoOp rerank, small-to-big context, cited answers, stream/non-stream LLM.
 - `scripts/rag_cli.py` (ingest/docs/chunks/search/ask/eval-gen/eval) and unit tests in `tests/core`.
+- (2026-10-13) Spec `document-conversation-api.md` implemented:
+  - Migration `0003_conversations`: queue columns, `size_bytes`, unique `(user_id, lower(name))`, `conversations`, `messages`.
+  - Upload: `Request`-based multipart endpoint with auth / Content-Length / slot / free-disk / quota checks before parsing, chunked copy + sha256, per-user files `{uid}/{name}.pdf`, `canonical_document_name`.
+  - Postgres-queue `IngestionWorker` (lifespan task or `scripts/ingest_worker.py`), `pipeline.run()` split from CLI `ingest()`.
+  - Document API: list + usage, file (inline PDF), reindex, delete (removes file). Old `/conversation/stream` removed.
+  - Conversation API: CRUD + SSE `POST /{id}/messages` (meta → contexts → token → final / error), `QueryRewriter` for follow-ups, `ChatLimiter`, history persisted.
+  - Gemini streaming via async SDK; `get_current_user` uses its own short session; DB pool from settings.
+  - Tests: ingest worker, query rewriter, naming, auth-required, upload route/helpers. `scripts/load_chat.py`.
+  - Client: Documents page (status badges, polling, usage, multi-select chat, open PDF), Chat page (conversation list, new chat dialog, streaming with citations/sources, stop/retry), `apiStream`, 401 → login.
 
 ## In Progress
 
-- Document endpoints using `IngestionPipeline` / `DocumentStore`.
+- Verification checklist (§5 of the spec): manual UI checks, upload limits (503/507/quota), kill/restart ingest, load check (`load_chat.py`) and recording TTFT p50/p95 in the spec.
 
 ## Next Up
 
-- Trigger ingestion after upload (background task) and expose `status` / `num_chunks` / `error` in UI.
-- RAG chat endpoint using `RAGService.answer_stream` (contexts → tokens → final with citations), scoped by user + optional document.
-- Wire `ChatPage` to the real endpoint (currently mocked with `setTimeout`), show sources.
-- Secure `GET /document/{filename}` and `/conversation/stream` with auth + ownership.
-- Delete file from disk on document delete; store files per user to avoid name collisions.
+- Fix client build: `tailwindcss@4` is installed but `postcss.config.js` / `globals.css` use the v3 setup (`npm run build` fails before this branch too).
 - Run eval baseline and tune `rerank_min_score` / `retrieval_min_dense_score`.
 
 ## Open Questions
 
-- Ingestion on upload: FastAPI `BackgroundTasks` vs a worker queue?
-- Name key mismatch: cruds use `filename.split(".")[0]`, pipeline uses `path.stem` — unify.
-- Multi-turn chat / question rewriting and Vietnamese queries on English docs (BM25 weak) — later phase?
-- Reranker on Linux/Docker deploy (Laya is Apple-Silicon only) — `none` or a cross-encoder?
+- Vietnamese queries on English docs (BM25 weak): fold translation into `QueryRewriter` later?
+- Reranker on Linux/Docker deploy (Laya is Apple-Silicon only): cross-encoder later; API defaults to `none`.
 - AGPL (PyMuPDF, ParadeDB) acceptable beyond demo?
+- `make quality` cannot pass as configured: black/isort/flake8 are not in dev deps, and flake8 uses max line 79 while black formats at 88 (existing code already exceeds 79).
 
 ## Architecture Decisions
 
@@ -50,9 +54,16 @@ change.
 - Alembic owns schema; `create_all` removed to keep migrations the single source of truth.
 - Mandatory citations + refusal before LLM when retrieval is weak, to limit hallucination.
 - Composition root in `core/factory.py`; core is framework-agnostic and unit-testable.
+- (2026-10-13) Ingestion via Postgres queue (`documents.status` + `FOR UPDATE SKIP LOCKED`), in-process by default, separate worker process to scale; no Redis.
+- (2026-10-13) Conversations persisted (`conversations`, `messages`), scoped to 1..10 indexed documents, follow-ups rewritten to standalone questions.
+- (2026-10-13) API uses `api_reranker=none` (Laya's global lock serializes requests); Laya kept for CLI/eval.
+- (2026-10-13) Files stored at `{user_id}/{name}.pdf` with `name` canonicalized (NFC, forbidden chars → `_`, ≤ 200 bytes) and unique on `(user_id, lower(name))` (APFS is case/normalization-insensitive).
+- (2026-10-13) Upload stays multipart, but the endpoint takes `Request` and parses the form only after auth, Content-Length, per-process semaphore, free-disk and per-user quota checks (FastAPI parses declared `UploadFile` params before auth). Benchmark: upload costs ~1-2.4 CPU-s/GB; risk is disk, not CPU.
 
 ## Session Notes
 
 - Run: `docker compose up -d` → `cd server && uv run alembic upgrade head` → `uv run python server.py`; client `npm run dev` (`VITE_API_BASE_URL=http://localhost:8000/api`).
 - Non-Mac: set `RERANKER=none`. DB host port defaults to 5433 in compose; match `POSTGRES_PORT` in `server/.env`.
-- Specs: `docs/specs/rag-core.md`; CLI usage: `docs/usaged/manual_usage_rag_cli.md` (gitignored).
+- Specs: `docs/specs/rag-core.md`, `docs/specs/document-conversation-api.md`; CLI usage: `docs/usaged/manual_usage_rag_cli.md` (gitignored).
+- Set `TMPDIR` to a folder on the documents volume before starting the API (`mkdir -p documents/.upload-tmp && export TMPDIR=$PWD/documents/.upload-tmp`).
+- 2026-10-13 smoke test: Gemini latency was very high (non-stream "say hi" took ~170 s), so the 8 s rewrite timeout fell back to the original question; TTFT numbers from that day are not representative.
