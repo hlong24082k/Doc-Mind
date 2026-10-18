@@ -30,7 +30,6 @@ from app.core.domain import (  # noqa: E402
     TokenEvent,
 )
 from app.core.errors import RAGError  # noqa: E402
-from app.core.llm.gemini_provider import GeminiProvider  # noqa: E402
 from app.core.llm.post_processor import PostProcessor  # noqa: E402
 from app.core.storage.chunk_repository import PgChunkRepository  # noqa: E402
 from app.core.storage.document_repository import (  # noqa: E402
@@ -39,7 +38,7 @@ from app.core.storage.document_repository import (  # noqa: E402
 from app.db.session import AsyncSessionLocal, engine  # noqa: E402
 from app.models.user import User  # noqa: E402
 
-EVAL_MODES = ("dense", "sparse", "hybrid", "hybrid+rerank")
+EVAL_MODES = ("dense", "sparse", "hybrid")
 
 
 class CLIError(RAGError):
@@ -157,7 +156,7 @@ async def cmd_search(args) -> int:
     user_id = await resolve_user(args.user)
     scope = SearchScope(user_id, tuple(args.doc) if args.doc else None)
     service = factory.build_rag_service(mode=args.mode)
-    result = await service.search(args.query, scope, rerank=args.rerank, k=args.k)
+    result = await service.search(args.query, scope, k=args.k)
     if args.json:
         print(
             json.dumps(
@@ -189,7 +188,7 @@ async def cmd_search(args) -> int:
 async def cmd_ask(args) -> int:
     user_id = await resolve_user(args.user)
     scope = SearchScope(user_id, tuple(args.doc) if args.doc else None)
-    service = factory.build_rag_service(reranker=args.reranker)
+    service = factory.build_rag_service()
 
     if args.no_stream:
         answer = await service.answer(args.query, scope)
@@ -239,7 +238,7 @@ async def cmd_eval_gen(args) -> int:
     user_id = await resolve_user(args.user)
     scope = SearchScope(user_id, (args.doc,))
     chunks = await PgChunkRepository(AsyncSessionLocal).sample(scope, args.n)
-    llm = GeminiProvider()
+    llm = factory.build_llm()
     processor = PostProcessor()
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -318,17 +317,13 @@ async def cmd_eval(args) -> int:
     print(f"{len(items)} questions")
     print(f"{'mode':16} {'k':>3} {'Hit@k':>7} {'MRR@k':>7} {'PageRecall@k':>13}")
     for mode in modes:
-        base, rerank = ("hybrid", True) if mode == "hybrid+rerank" else (mode, False)
-        service = factory.build_rag_service(mode=base)
-        service.min_score = None  # eval đo xếp hạng, không lọc ngưỡng
+        service = factory.build_rag_service(mode=mode)
         service.min_dense_score = None
         per_k = {k: [] for k in ks}
         latencies: list[float] = []
         for item in items:
             t = time.perf_counter()
-            result = await service.search(
-                item["question"], scope, rerank=rerank, k=max(ks)
-            )
+            result = await service.search(item["question"], scope, k=max(ks))
             latencies.append((time.perf_counter() - t) * 1000)
             for k in ks:
                 per_k[k].append(metrics(result.chunks, item, k))
@@ -371,7 +366,6 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("search")
     s.add_argument("query")
     s.add_argument("--mode", choices=["dense", "sparse", "hybrid"], default="hybrid")
-    s.add_argument("--rerank", action=argparse.BooleanOptionalAction, default=True)
     s.add_argument("-k", type=int, default=10)
     s.add_argument("--doc", action="append")
     s.add_argument("--json", action="store_true")
@@ -383,7 +377,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--doc", action="append")
     s.add_argument("--no-stream", action="store_true")
     s.add_argument("--show-context", action="store_true")
-    s.add_argument("--reranker", choices=["laya", "none"])
     add_user(s)
     s.set_defaults(func=cmd_ask)
 

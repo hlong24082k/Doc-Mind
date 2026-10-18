@@ -69,7 +69,7 @@ async def test_merges_adjacent_windows_without_duplicate_overlap():
 
 
 @pytest.mark.asyncio
-async def test_order_follows_rerank_and_refs_numbered():
+async def test_order_follows_input_and_refs_numbered():
     chunks = corpus()
     blocks = await builder(chunks, window=0).build([hit(chunks, 8), hit(chunks, 1)])
     assert [b.ref for b in blocks] == [1, 2]

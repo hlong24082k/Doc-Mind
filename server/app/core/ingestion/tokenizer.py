@@ -2,7 +2,7 @@ from tokenizers import Tokenizer
 
 
 class HFTokenCounter:
-    """Đếm token theo tokenizer HuggingFace (ModernBERT, khớp với Laya)."""
+    """Đếm token theo tokenizer HuggingFace (ModernBERT)."""
 
     def __init__(self, model_id: str):
         self._tokenizer = Tokenizer.from_pretrained(model_id)

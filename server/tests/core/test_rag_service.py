@@ -12,21 +12,9 @@ class FakeRetriever:
         return self.chunks
 
 
-class FakeReranker:
-    async def rerank(self, query, candidates, top_n):
-        return list(candidates[:top_n])
-
-
 def svc(chunks, min_dense):
     # context_builder/generator = None: nếu bị gọi tới thì test vỡ
-    return RAGService(
-        FakeRetriever(chunks),
-        FakeReranker(),
-        None,
-        None,
-        min_score=None,
-        min_dense_score=min_dense,
-    )
+    return RAGService(FakeRetriever(chunks), None, None, min_dense_score=min_dense)
 
 
 def hit(dense=None):
@@ -36,7 +24,7 @@ def hit(dense=None):
 
 async def test_low_dense_score_refuses_without_llm():
     a = await svc([hit(0.5)], 0.65).answer("weather?", SearchScope("u"))
-    assert a.refused and "llm" not in a.timings_ms and "rerank" not in a.timings_ms
+    assert a.refused and "llm" not in a.timings_ms
     assert list(a.timings_ms)[-1] == "total"
 
 

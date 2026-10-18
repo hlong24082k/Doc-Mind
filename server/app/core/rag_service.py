@@ -1,12 +1,11 @@
 import time
-from typing import AsyncIterator, Sequence
+from typing import AsyncIterator
 
 from app.core.domain import (
     Answer,
     ContextBlock,
     ContextsEvent,
     FinalEvent,
-    ScoredChunk,
     SearchResult,
     SearchScope,
     TokenEvent,
@@ -18,7 +17,7 @@ from app.core.generation.citations import (
     is_refusal,
 )
 from app.core.generation.context_builder import ContextBuilder
-from app.core.interfaces import Reranker, Retriever
+from app.core.interfaces import Retriever
 from app.core.prompt.rag_prompts import REFUSAL_TEXT
 
 
@@ -27,26 +26,22 @@ def _ms(start: float) -> float:
 
 
 class RAGService:
-    """Orchestrator truy vấn: retrieve → rerank → context → generate."""
+    """Orchestrator truy vấn: retrieve → context → generate."""
 
     def __init__(
         self,
         retriever: Retriever,
-        reranker: Reranker,
         context_builder: ContextBuilder,
         generator: AnswerGenerator,
         candidates: int = 30,
         top_n: int = 5,
-        min_score: float | None = 0.1,
         min_dense_score: float | None = None,
     ):
         self.retriever = retriever
-        self.reranker = reranker
         self.context_builder = context_builder
         self.generator = generator
         self.candidates = candidates
         self.top_n = top_n
-        self.min_score = min_score
         self.min_dense_score = min_dense_score
 
     async def search(
@@ -54,7 +49,6 @@ class RAGService:
         query: str,
         scope: SearchScope,
         *,
-        rerank: bool = True,
         k: int | None = None,
     ) -> SearchResult:
         timings: dict[str, float] = {}
@@ -67,22 +61,13 @@ class RAGService:
         timings["retrieve"] = _ms(t)
 
         # Chặn sớm câu hỏi ngoài lề: không chunk nào đủ gần về ngữ nghĩa thì
-        # bỏ qua rerank + LLM. Retriever sparse-only không có điểm dense → không chặn.
+        # bỏ qua LLM. Retriever sparse-only không có điểm dense → không chặn.
         dense = [c.scores["dense"] for c in found if "dense" in c.scores]
         if self.min_dense_score is not None and dense:
             if max(dense) < self.min_dense_score:
                 found = []
 
-        if rerank and found:
-            t = time.perf_counter()
-            chunks: Sequence[ScoredChunk] = await self.reranker.rerank(
-                query, found, k or self.top_n
-            )
-            timings["rerank"] = _ms(t)
-            if self.min_score is not None:
-                chunks = [c for c in chunks if c.scores["rerank"] >= self.min_score]
-        else:
-            chunks = found[: k or self.top_n]
+        chunks = found[: k or self.top_n]
 
         timings["total"] = _ms(total)
         return SearchResult(chunks=tuple(chunks), timings_ms=timings)
