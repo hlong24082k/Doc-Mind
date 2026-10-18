@@ -12,9 +12,8 @@
 | Database     | PostgreSQL 17 (ParadeDB image) + SQLAlchemy 2 async (asyncpg) | Users, documents, chunks                    |
 | Migrations   | Alembic                                        | Sole owner of schema (no `create_all`)                   |
 | Vector / BM25 | pgvector HNSW + ParadeDB `pg_search`          | Dense + sparse retrieval inside Postgres                 |
-| LLM          | Gemini `gemini-3.5-flash-lite` (`google-genai`) | Answer generation, stream / non-stream                   |
+| LLM          | Any OpenAI-compatible Chat Completions endpoint (`openai` SDK, `AsyncOpenAI`); default Gemini `gemini-3.5-flash-lite` via OpenAI-compat | Answer generation + query rewrite, stream / non-stream |
 | Embedding    | Gemini `gemini-embedding-2` (768-d)            | Chunk and query vectors                                  |
-| Reranker     | Laya MLX (Apple Silicon) / `NoOpReranker`      | Relevance rerank (CLI/eval); API uses `api_reranker=none` |
 | Parsing      | PyMuPDF + HF `tokenizers` (ModernBERT)         | PDF → blocks → token-bounded chunks                      |
 
 ## System Boundaries
@@ -24,7 +23,7 @@
 - `server/app/routers` — HTTP endpoints (auth, document, conversation, heartbeat); thin, delegate to cruds/core. Upload pre-checks in `document/limits.py`, chat limiter + SSE stream in `conversation/`.
 - `server/app/cruds` — ORM CRUD (users, documents, conversations); request `AsyncSession` or a session factory for short sessions.
 - `server/app/models`, `alembic/` — ORM models and the migrations that define the real schema.
-- `server/app/core` — RAG engine, framework-agnostic: ingestion, embedding, storage repos, retrieval, rerank, generation, LLM. Depends only on `interfaces.py` Protocols.
+- `server/app/core` — RAG engine, framework-agnostic: ingestion, embedding, storage repos, retrieval, generation, LLM. Depends only on `interfaces.py` Protocols.
 - `server/app/core/factory.py` — composition root; the only core file that reads `settings`.
 - `server/app/core/ingestion/worker.py` — ingest worker over the Postgres queue (in the API lifespan or `scripts/ingest_worker.py`).
 - `server/scripts` — `rag_cli.py` (ingest/search/ask/eval), `ingest_worker.py`, `load_chat.py`, `seed.py`, run script.
@@ -51,9 +50,9 @@
 4. Re-ingest replaces a document's chunks in one transaction (delete + insert); skipped when hash unchanged unless `force`.
 5. `embedding_dim` must match `vector(768)`; changing it needs a new migration + full re-ingest.
 6. Answers must cite `[n]` sources; no valid citation → `grounded=False`. No relevant chunks → refusal without calling the LLM.
-7. Blocking work (PyMuPDF, Laya) runs via `asyncio.to_thread`; Laya guarded by a lock (CLI only).
+7. Blocking work (PyMuPDF) runs via asyncio.to_thread.
 8. API `SearchScope.document_ids` is never empty (empty = all of the user's documents); chat returns 409 instead.
 9. Ingestion goes through the Postgres queue: workers claim with `FOR UPDATE SKIP LOCKED`, stale `processing` jobs are reclaimed, attempts are capped, shutdown releases jobs back to `pending`.
 10. Upload endpoint never declares `UploadFile`: auth, Content-Length, upload slot, free disk and quota checks run before the body is parsed.
 11. Chat concurrency is limited per process (semaphore + one stream per user); the stream holds no DB connection.
-12. LLM streaming uses the async Gemini SDK (no thread per request; cancelled when the client disconnects).
+12. LLM streaming uses AsyncOpenAI (no thread per request); the stream is closed, cancelling the upstream request, when the client disconnects.

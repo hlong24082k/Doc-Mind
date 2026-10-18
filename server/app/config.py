@@ -47,10 +47,14 @@ class Settings(BaseSettings):
     # ---- Documents folder ----
     documents_folder: str = "./documents"
 
-    # ---- Gemini setting ----
+    # ---- Gemini (embedding) ----
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.5-flash-lite"
-    gemini_thinking_level: str = "minimal"  # minimal | low | medium | high
+
+    # ---- LLM (endpoint tương thích OpenAI: Gemini, vLLM, OpenRouter...) ----
+    llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    llm_api_key: str = ""
+    llm_model: str = "gemini-3.5-flash-lite"
+    llm_reasoning_effort: str = "minimal"  # rỗng = không gửi (vd. vLLM)
 
     # ---- Embedding ----
     embedding_model: str = "gemini-embedding-2"
@@ -73,16 +77,10 @@ class Settings(BaseSettings):
     retrieval_rrf_k: int = 60
     retrieval_dense_weight: float = 1.0
     retrieval_sparse_weight: float = 1.0
-    retrieval_candidates: int = 30  # số candidate đưa vào reranker
+    retrieval_candidates: int = 30  # số candidate xét ngưỡng dense trước khi cắt top_n
+    retrieval_top_n: int = 5  # số chunk đưa vào context
     hnsw_ef_search: int = 100
     retrieval_min_dense_score: float = 0.65
-
-    # ---- Rerank ----
-    reranker: str = "laya"  # laya | none
-    laya_model: str = "aac6fef/laya-typed-decisions-mlx"
-    laya_dtype: str = "float16"
-    rerank_top_n: int = 3
-    rerank_min_score: float = 0.10  # sẽ tune lại bằng eval
 
     # ---- Generation ----
     context_window: int = 0  # số chunk liền kề mỗi phía (small-to-big)
@@ -109,7 +107,6 @@ class Settings(BaseSettings):
     ingest_stale_after_s: int = 900  # job 'processing' quá hạn → claim lại
 
     # ---- Chat ----
-    api_reranker: str = "none"  # laya | none (CLI vẫn dùng `reranker`)
     chat_max_concurrency: int = 32  # stream đồng thời mỗi process
     chat_queue_timeout_s: float = 10.0
     chat_history_turns: int = 3  # số lượt (user+assistant) đưa vào rewriter

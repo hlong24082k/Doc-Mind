@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Literal
 
 from google import genai
+from openai import AsyncOpenAI
 
 from app.config import Settings, settings
 from app.core.embedding.gemini_embedder import GeminiEmbedder
@@ -16,11 +17,9 @@ from app.core.ingestion.pdf_loader import PyMuPDFLoader
 from app.core.ingestion.pipeline import IngestionPipeline
 from app.core.ingestion.tokenizer import HFTokenCounter
 from app.core.ingestion.worker import IngestionWorker
-from app.core.interfaces import Embedder, Reranker, Retriever
-from app.core.llm.gemini_provider import GeminiProvider
+from app.core.interfaces import Embedder, Retriever
+from app.core.llm.openai_provider import OpenAIProvider
 from app.core.rag_service import RAGService
-from app.core.rerank.laya_reranker import LayaReranker
-from app.core.rerank.noop_reranker import NoOpReranker
 from app.core.retrieval.dense import PgVectorRetriever
 from app.core.retrieval.fusion import ReciprocalRankFusion
 from app.core.retrieval.hybrid import HybridRetriever
@@ -36,17 +35,21 @@ def _token_counter(model_id: str) -> HFTokenCounter:
 
 
 @lru_cache(maxsize=None)
-def _laya(model_id: str, dtype: str) -> LayaReranker:
-    return LayaReranker(model_id, dtype=dtype)
-
-
-@lru_cache(maxsize=None)
 def _genai_client(api_key: str) -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def _llm(s: Settings) -> GeminiProvider:
-    return GeminiProvider(s.gemini_model, client=_genai_client(s.gemini_api_key))
+@lru_cache(maxsize=None)
+def _openai_client(base_url: str, api_key: str) -> AsyncOpenAI:
+    return AsyncOpenAI(base_url=base_url, api_key=api_key)
+
+
+def build_llm(s: Settings = settings) -> OpenAIProvider:
+    return OpenAIProvider(
+        _openai_client(s.llm_base_url, s.llm_api_key),
+        s.llm_model,
+        reasoning_effort=s.llm_reasoning_effort or None,
+    )
 
 
 def build_embedder(
@@ -96,15 +99,6 @@ def build_retriever(
     raise ValueError(f"Unknown retrieval mode: {mode}")
 
 
-def build_reranker(name: str | None = None, s: Settings = settings) -> Reranker:
-    name = (name or s.reranker).lower()
-    if name == "laya":
-        return _laya(s.laya_model, s.laya_dtype)
-    if name == "none":
-        return NoOpReranker()
-    raise ValueError(f"Unknown reranker: {name}")
-
-
 def build_ingestion_pipeline(s: Settings = settings) -> IngestionPipeline:
     chunker = StructuredChunker(
         _token_counter(s.chunk_tokenizer),
@@ -126,32 +120,28 @@ def build_ingestion_pipeline(s: Settings = settings) -> IngestionPipeline:
 def build_rag_service(
     *,
     mode: Literal["dense", "sparse", "hybrid"] = "hybrid",
-    reranker: str | None = None,
     s: Settings = settings,
     query_max_retries: int | None = None,
 ) -> RAGService:
-    reranker_name = (reranker or s.reranker).lower()
     # embedder phía query retry ít hơn: user không phải chờ hàng phút khi 429
     embedder = build_embedder(s, max_retries=query_max_retries)
     return RAGService(
         retriever=build_retriever(mode, s, embedder=embedder),
-        reranker=build_reranker(reranker_name, s),
         context_builder=ContextBuilder(
             PgChunkRepository(AsyncSessionLocal),
             _token_counter(s.chunk_tokenizer),
             window=s.context_window,
             max_tokens=s.context_max_tokens,
         ),
-        generator=AnswerGenerator(_llm(s)),
+        generator=AnswerGenerator(build_llm(s)),
         candidates=s.retrieval_candidates,
-        top_n=s.rerank_top_n,
-        min_score=None if reranker_name == "none" else s.rerank_min_score,
+        top_n=s.retrieval_top_n,
         min_dense_score=s.retrieval_min_dense_score or None,
     )
 
 
 def build_query_rewriter(s: Settings = settings) -> QueryRewriter:
-    return QueryRewriter(_llm(s), timeout_s=s.query_rewrite_timeout_s)
+    return QueryRewriter(build_llm(s), timeout_s=s.query_rewrite_timeout_s)
 
 
 def build_ingest_worker(s: Settings = settings) -> IngestionWorker:
@@ -176,7 +166,6 @@ def build_api_services(s: Settings = settings) -> ApiServices:
     """Gọi một lần trong lifespan; mọi object đều stateless."""
     return ApiServices(
         rag=build_rag_service(
-            reranker=s.api_reranker,
             s=s,
             query_max_retries=s.embedding_query_max_retries,
         ),

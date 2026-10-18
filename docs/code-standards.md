@@ -2,7 +2,7 @@
 
 ## General
 
-- One file, one responsibility (loader, chunker, retriever, reranker…); keep routers thin.
+- One file, one responsibility (loader, chunker, retriever…); keep routers thin.
 - Depend on Protocols in `core/interfaces.py`, wire concrete classes in `core/factory.py`.
 - Fix root causes; do not swallow exceptions (surface LLM `error` events, wrap in `RAGError` subclasses).
 - Do not mix HTTP concerns (SSE, `HTTPException`) into `core` beyond the existing LLM stream.
@@ -51,7 +51,7 @@
 - `client/src/api/` — API client, endpoint config, services, types.
 - `client/src/pages/`, `components/`, `store/`, `hooks/` — views, UI, global state, hooks.
 - `server/app/routers/`, `schemas/`, `cruds/`, `models/` — HTTP layer, DTOs, CRUD, ORM.
-- `server/app/core/` — RAG engine (`ingestion/`, `embedding/`, `storage/`, `retrieval/`, `rerank/`, `generation/`, `llm/`, `prompt/`).
+- `server/app/core/` — RAG engine (`ingestion/`, `embedding/`, `storage/`, `retrieval/`, `generation/`, `llm/`, `prompt/`).
 - `server/alembic/versions/` — numbered migrations (`000N_<name>.py`).
 - `server/scripts/`, `server/tests/core/`, `server/eval/` — CLI tools, unit tests, golden sets.
 - `docs/` — context files and specs (`docs/specs/`).

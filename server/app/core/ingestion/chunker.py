@@ -37,7 +37,7 @@ class _Chunk:
 
 
 class StructuredChunker:
-    """Chunk theo section, overlap theo câu, đo bằng token của reranker."""
+    """Chunk theo section, overlap theo câu, đo bằng token của ModernBERT."""
 
     def __init__(
         self,

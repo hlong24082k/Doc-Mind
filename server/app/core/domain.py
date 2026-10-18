@@ -83,7 +83,7 @@ class RetrievedChunk:
 class ScoredChunk:
     chunk: RetrievedChunk
     score: float
-    # {"dense": .., "sparse": .., "rrf": .., "rerank": ..}
+    # {"dense": .., "sparse": .., "rrf": ..}
     scores: Mapping[str, float] = field(default_factory=dict)
     # {"dense": 3, "sparse": 1}
     ranks: Mapping[str, int] = field(default_factory=dict)

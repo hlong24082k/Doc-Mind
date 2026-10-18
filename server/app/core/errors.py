@@ -10,9 +10,5 @@ class EmbeddingError(RAGError):
     pass
 
 
-class RerankerUnavailableError(RAGError):
-    pass
-
-
 class LLMGenerationError(RAGError):
     pass

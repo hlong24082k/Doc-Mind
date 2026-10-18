@@ -101,10 +101,3 @@ class FusionStrategy(Protocol):
     ) -> list[ScoredChunk]: ...
 
 
-class Reranker(Protocol):
-    async def rerank(
-        self,
-        query: str,
-        candidates: Sequence[ScoredChunk],
-        top_n: int,
-    ) -> list[ScoredChunk]: ...
