@@ -31,6 +31,8 @@ change.
 - (2026-10-18) Spec `003_remove-reranker-openai-llm.md` implemented: rerank stage removed (`core/rerank/`, `Reranker`, settings, CLI flags, `hybrid+rerank` eval mode); `retrieval_top_n` replaces `rerank_top_n`; `GeminiProvider` → `OpenAIProvider` + `factory.build_llm()`; deps `laya-mlx`/`google-generativeai` out, `openai` in; new `tests/core/test_openai_provider.py`. Live LLM/UI checks of spec §5 pending.
 - (2026-10-13) CI: `.github/workflows/ci.yml` on PRs and pushes to `develop`/`main` — server `uv sync --locked` + `pytest`; client `npm ci`, lint, `tsc --noEmit`, build. No DB/Gemini needed (tests use fakes). `make quality` not in CI (see Open Questions).
 
+- (2026-10-19) Docker Compose full stack: `server/Dockerfile` (uv, migrations on start), `nginx/Dockerfile` + `nginx/nginx.conf` (SPA + `/api` proxy, SSE unbuffered, 100 MB body), postgres healthcheck, `./server/documents` bind-mounted, HF tokenizer cache volume. Verified: build, migrations, login and document list via nginx; SSE chat through nginx not yet exercised.
+
 ## In Progress
 
 - Verification checklist (§5 of the spec): manual UI checks, upload limits (503/507/quota), kill/restart ingest, load check (`load_chat.py`) and recording TTFT p50/p95 in the spec.
@@ -63,7 +65,8 @@ change.
 
 ## Session Notes
 
-- Run: `docker compose up -d` → `cd server && uv run alembic upgrade head` → `uv run python server.py`; client `npm run dev` (`VITE_API_BASE_URL=http://localhost:8000/api`).
+- Full stack: `docker compose up -d --build` → http://localhost (`NGINX_PORT` to change). Uses `server/.env`; compose overrides `POSTGRES_HOST/PORT`, `DOCUMENTS_FOLDER`, `TMPDIR`, `DEBUG=false`. Postgres credentials come only from `server/.env`.
+- Dev: `docker compose up -d postgres` → `cd server && uv run alembic upgrade head` → `uv run python server.py`; client `npm run dev` (`VITE_API_BASE_URL=http://localhost:8000/api`).
 - DB host port defaults to 5433 in compose; match `POSTGRES_PORT` in `server/.env`.
 - Specs: `docs/specs/rag-core.md`, `docs/specs/document-conversation-api.md`; CLI usage: `docs/usaged/manual_usage_rag_cli.md` (gitignored).
 - Set `TMPDIR` to a folder on the documents volume before starting the API (`mkdir -p documents/.upload-tmp && export TMPDIR=$PWD/documents/.upload-tmp`).

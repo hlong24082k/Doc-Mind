@@ -15,6 +15,7 @@
 | LLM          | Any OpenAI-compatible Chat Completions endpoint (`openai` SDK, `AsyncOpenAI`); default Gemini `gemini-3.5-flash-lite` via OpenAI-compat | Answer generation + query rewrite, stream / non-stream |
 | Embedding    | Gemini `gemini-embedding-2` (768-d)            | Chunk and query vectors                                  |
 | Parsing      | PyMuPDF + HF `tokenizers` (ModernBERT)         | PDF → blocks → token-bounded chunks                      |
+| Deploy       | Docker Compose: `postgres`, `server` (uvicorn, 1 process), `nginx` (built SPA + `/api` reverse proxy) | Full stack on `http://localhost` |
 
 ## System Boundaries
 
@@ -28,6 +29,7 @@
 - `server/app/core/ingestion/worker.py` — ingest worker over the Postgres queue (in the API lifespan or `scripts/ingest_worker.py`).
 - `server/scripts` — `rag_cli.py` (ingest/search/ask/eval), `ingest_worker.py`, `load_chat.py`, `seed.py`, run script.
 - `server/tests/core`, `server/tests/api` — unit tests with fakes (no DB / Gemini).
+- `nginx/` — image that builds the client (`VITE_API_BASE_URL=/api`) and serves it; proxies `/api/` to `server:8000` with buffering off (SSE) and `client_max_body_size` ≥ `UPLOAD_MAX_REQUEST_MB`. `server/Dockerfile` runs `alembic upgrade head` then uvicorn.
 
 ## Storage Model
 

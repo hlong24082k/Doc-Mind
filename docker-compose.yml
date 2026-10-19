@@ -3,16 +3,48 @@ services:
     image: paradedb/paradedb:0.26.1-pg17
     container_name: docmind_postgres
     restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-docmind}
+    env_file:
+      - server/.env
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - paradedb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build: ./server
+    container_name: docmind_server
+    restart: always
     env_file:
       - server/.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      DEBUG: "false"
+      DOCUMENTS_FOLDER: /data/documents
+      TMPDIR: /data/documents/.upload-tmp
+    volumes:
+      - ./server/documents:/data/documents
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: docmind_nginx
+    restart: always
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    depends_on:
+      - server
 
 volumes:
   paradedb_data:
+  hf_cache:
