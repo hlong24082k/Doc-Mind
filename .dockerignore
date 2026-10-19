@@ -1,0 +1,7 @@
+# context của nginx build (repo root); server có .dockerignore riêng
+**/node_modules
+client/dist
+**/.env
+server
+docs
+.git
